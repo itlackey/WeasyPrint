@@ -3,7 +3,10 @@
 import pytest
 
 from weasyprint.layout.float import get_shape_box_bounds
-from weasyprint.layout.shapes import BoxBoundary, ShapeBoundary, create_shape_boundary
+from weasyprint.layout.shapes import (
+    BoxBoundary, CircleBoundary, EllipseBoundary, InsetBoundary,
+    PolygonBoundary, ShapeBoundary, create_shape_boundary,
+)
 
 from ..testing_utils import assert_no_logs, render_pages
 
@@ -2591,3 +2594,107 @@ def test_inset_invalid_too_many_offsets():
     div, = body.children
     # Should fall back to default 'none'
     assert div.style['shape_outside'] == 'none'
+
+
+# ---------------------------------------------------------------------------
+# Edge Case / Degenerate Shape Tests
+# ---------------------------------------------------------------------------
+
+@assert_no_logs
+def test_circle_boundary_zero_radius():
+    """Test that CircleBoundary with zero radius returns None bounds."""
+    boundary = CircleBoundary(cx=50, cy=50, radius=0)
+    assert boundary.get_bounds_at_y(50) is None
+
+
+@assert_no_logs
+def test_circle_boundary_negative_radius():
+    """Test that CircleBoundary with negative radius returns None bounds."""
+    boundary = CircleBoundary(cx=50, cy=50, radius=-10)
+    assert boundary.get_bounds_at_y(50) is None
+
+
+@assert_no_logs
+def test_ellipse_boundary_zero_rx():
+    """Test that EllipseBoundary with zero rx returns None bounds."""
+    boundary = EllipseBoundary(cx=50, cy=50, rx=0, ry=50)
+    assert boundary.get_bounds_at_y(50) is None
+
+
+@assert_no_logs
+def test_ellipse_boundary_zero_ry():
+    """Test that EllipseBoundary with zero ry returns None bounds."""
+    boundary = EllipseBoundary(cx=50, cy=50, rx=50, ry=0)
+    assert boundary.get_bounds_at_y(50) is None
+
+
+@assert_no_logs
+def test_ellipse_boundary_negative_radii():
+    """Test that EllipseBoundary with negative radii returns None bounds."""
+    boundary = EllipseBoundary(cx=50, cy=50, rx=-10, ry=-20)
+    assert boundary.get_bounds_at_y(50) is None
+
+
+@assert_no_logs
+def test_polygon_boundary_empty_points():
+    """Test that PolygonBoundary with empty points returns None bounds."""
+    boundary = PolygonBoundary(points=[])
+    assert boundary.is_degenerate
+    assert boundary.get_bounds_at_y(50) is None
+
+
+@assert_no_logs
+def test_polygon_boundary_single_point():
+    """Test that PolygonBoundary with single point returns None bounds."""
+    boundary = PolygonBoundary(points=[(50, 50)])
+    assert boundary.is_degenerate
+    assert boundary.get_bounds_at_y(50) is None
+
+
+@assert_no_logs
+def test_polygon_boundary_two_points():
+    """Test that PolygonBoundary with two points returns None bounds."""
+    boundary = PolygonBoundary(points=[(0, 0), (100, 100)])
+    assert boundary.is_degenerate
+    assert boundary.get_bounds_at_y(50) is None
+
+
+@assert_no_logs
+def test_polygon_boundary_three_points_valid():
+    """Test that PolygonBoundary with three points is valid (triangle)."""
+    boundary = PolygonBoundary(points=[(0, 0), (100, 0), (50, 100)])
+    assert not boundary.is_degenerate
+    bounds = boundary.get_bounds_at_y(50)
+    assert bounds is not None
+
+
+@assert_no_logs
+def test_inset_boundary_floating_point_corner():
+    """Test InsetBoundary at exact corner radius boundary (floating-point edge case)."""
+    # Create an inset with rounded corners
+    boundary = InsetBoundary(
+        left=0, top=0, right=100, bottom=100,
+        border_radius=(10, 10, 10, 10)
+    )
+    # Query at exactly the corner radius boundary
+    bounds = boundary.get_bounds_at_y(10)
+    assert bounds is not None
+    # Query just inside the corner
+    bounds = boundary.get_bounds_at_y(5)
+    assert bounds is not None
+    # Query at the very edge
+    bounds = boundary.get_bounds_at_y(0)
+    assert bounds is not None
+
+
+@assert_no_logs
+def test_inset_boundary_very_small_corner_adjustment():
+    """Test InsetBoundary with very small dy values near corner."""
+    boundary = InsetBoundary(
+        left=0, top=0, right=100, bottom=100,
+        border_radius=(20, 20, 20, 20)
+    )
+    # Test a y value that results in very small (tl_r - dy) value
+    # This could cause floating-point issues with sqrt
+    bounds = boundary.get_bounds_at_y(19.999999999)
+    assert bounds is not None

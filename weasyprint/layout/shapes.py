@@ -121,6 +121,9 @@ class CircleBoundary(ShapeBoundary):
 
     def get_bounds_at_y(self, y):
         """Get horizontal bounds at Y using circle equation."""
+        # Degenerate circle with zero/negative radius has no exclusion area
+        if self.radius <= 0:
+            return None
         dy = y - self.cy
         if abs(dy) > self.radius:
             return None  # Y is outside circle
@@ -152,6 +155,9 @@ class EllipseBoundary(ShapeBoundary):
 
     def get_bounds_at_y(self, y):
         """Get horizontal bounds at Y using ellipse equation."""
+        # Degenerate ellipse with zero/negative radii has no exclusion area
+        if self.rx <= 0 or self.ry <= 0:
+            return None
         dy = y - self.cy
         if abs(dy) > self.ry:
             return None
@@ -180,8 +186,10 @@ class PolygonBoundary(ShapeBoundary):
         """
         self.points = points
         self.fill_rule = fill_rule
+        # A valid polygon needs at least 3 points to form a closed shape
+        self.is_degenerate = len(points) < 3
         # Precompute vertical extent
-        if points:
+        if points and not self.is_degenerate:
             ys = [p[1] for p in points]
             self.min_y = min(ys)
             self.max_y = max(ys)
@@ -191,6 +199,10 @@ class PolygonBoundary(ShapeBoundary):
 
     def get_bounds_at_y(self, y):
         """Get horizontal bounds at Y using scanline intersection."""
+        # Degenerate polygon with < 3 points has no exclusion area
+        if self.is_degenerate:
+            return None
+
         if y < self.min_y or y > self.max_y:
             return None
 
@@ -267,29 +279,34 @@ class InsetBoundary(ShapeBoundary):
             if tl_r > 0 and y < self.top + tl_r:
                 dy = y - self.top
                 # Circle equation: adjust left bound
+                # Use max(0, ...) to guard against floating-point precision issues
                 if dy < tl_r:
-                    dx = tl_r - math.sqrt(tl_r**2 - (tl_r - dy)**2)
+                    sqrt_arg = max(0, tl_r**2 - (tl_r - dy)**2)
+                    dx = tl_r - math.sqrt(sqrt_arg)
                     left = max(left, self.left + dx)
 
             # Top-right corner adjustment
             if tr_r > 0 and y < self.top + tr_r:
                 dy = y - self.top
                 if dy < tr_r:
-                    dx = tr_r - math.sqrt(tr_r**2 - (tr_r - dy)**2)
+                    sqrt_arg = max(0, tr_r**2 - (tr_r - dy)**2)
+                    dx = tr_r - math.sqrt(sqrt_arg)
                     right = min(right, self.right - dx)
 
             # Bottom-left corner adjustment
             if bl_r > 0 and y > self.bottom - bl_r:
                 dy = self.bottom - y
                 if dy < bl_r:
-                    dx = bl_r - math.sqrt(bl_r**2 - (bl_r - dy)**2)
+                    sqrt_arg = max(0, bl_r**2 - (bl_r - dy)**2)
+                    dx = bl_r - math.sqrt(sqrt_arg)
                     left = max(left, self.left + dx)
 
             # Bottom-right corner adjustment
             if br_r > 0 and y > self.bottom - br_r:
                 dy = self.bottom - y
                 if dy < br_r:
-                    dx = br_r - math.sqrt(br_r**2 - (br_r - dy)**2)
+                    sqrt_arg = max(0, br_r**2 - (br_r - dy)**2)
+                    dx = br_r - math.sqrt(sqrt_arg)
                     right = min(right, self.right - dx)
 
         return (left, right)
