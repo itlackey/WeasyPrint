@@ -7,6 +7,7 @@ from .min_max import handle_min_max_width
 from .percent import resolve_percentages, resolve_position_percentages
 from .preferred import shrink_to_fit
 from .replaced import inline_replaced_box_width_height
+from .shapes import create_shape_boundary
 from .table import table_wrapper_width
 
 
@@ -117,6 +118,9 @@ def float_layout(context, box, containing_block, absolute_boxes, fixed_boxes,
 
     box = find_float_position(context, box, containing_block)
 
+    # Attach shape boundary for shape-outside calculations
+    box.shape_boundary = create_shape_boundary(box)
+
     context.excluded_shapes.append(box)
     return box, resume_at
 
@@ -198,13 +202,23 @@ def avoid_collisions(context, box, containing_block, outer=True):
         left_bounds = []
         right_bounds = []
         for shape in colliding_shapes:
-            shape_x, shape_width = get_shape_box_bounds(shape)
+            # Use shape boundary to get exclusion bounds at this Y position
+            # Fall back to get_shape_box_bounds if shape_boundary not set
+            if hasattr(shape, 'shape_boundary'):
+                bounds = shape.shape_boundary.get_bounds_at_y(position_y)
+                if bounds is None:
+                    continue
+                shape_left, shape_right = bounds
+            else:
+                shape_x, shape_width = get_shape_box_bounds(shape)
+                shape_left = shape_x
+                shape_right = shape_x + shape_width
             if shape.style['float'] == 'left':
                 # For left floats, content wraps to the right of the exclusion
-                left_bounds.append(shape_x + shape_width)
+                left_bounds.append(shape_right)
             elif shape.style['float'] == 'right':
                 # For right floats, content wraps to the left of the exclusion
-                right_bounds.append(shape_x)
+                right_bounds.append(shape_left)
 
         # Set the default maximum bounds
         max_left_bound = containing_block.content_box_x()

@@ -3,6 +3,7 @@
 import pytest
 
 from weasyprint.layout.float import get_shape_box_bounds
+from weasyprint.layout.shapes import BoxBoundary, ShapeBoundary, create_shape_boundary
 
 from ..testing_utils import assert_no_logs, render_pages
 
@@ -271,6 +272,397 @@ def test_shape_box_bounds_content_box():
     # content-box: content_box_x and width
     assert x == div.content_box_x()
     assert width == div.width
+
+
+# ---------------------------------------------------------------------------
+# ShapeBoundary and BoxBoundary Unit Tests
+# ---------------------------------------------------------------------------
+
+@assert_no_logs
+def test_box_boundary_is_shape_boundary():
+    """Test that BoxBoundary is a subclass of ShapeBoundary."""
+    assert issubclass(BoxBoundary, ShapeBoundary)
+
+
+@assert_no_logs
+@pytest.mark.parametrize('box_type', [
+    'margin-box',
+    'border-box',
+    'padding-box',
+    'content-box',
+])
+def test_box_boundary_construction(box_type):
+    """Test BoxBoundary construction with each box type."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 80px;
+                margin: 10px;
+                padding: 5px;
+                border: 2px solid black;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    boundary = BoxBoundary(div, box_type)
+    assert boundary.box is div
+    assert boundary.box_type == box_type
+
+
+@assert_no_logs
+def test_box_boundary_margin_box_bounds():
+    """Test BoxBoundary margin-box bounds computation."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 80px;
+                margin: 10px;
+                padding: 5px;
+                border: 2px solid black;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    boundary = BoxBoundary(div, 'margin-box')
+    # Margin box
+    assert boundary.left == div.position_x
+    assert boundary.right == div.position_x + div.margin_width()
+    assert boundary.top == div.position_y
+    assert boundary.bottom == div.position_y + div.margin_height()
+
+
+@assert_no_logs
+def test_box_boundary_border_box_bounds():
+    """Test BoxBoundary border-box bounds computation."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 80px;
+                margin: 10px;
+                padding: 5px;
+                border: 2px solid black;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    boundary = BoxBoundary(div, 'border-box')
+    # Horizontal bounds use border-box
+    assert boundary.left == div.border_box_x()
+    assert boundary.right == div.border_box_x() + div.border_width()
+    # Vertical extent always uses margin-box for collision detection
+    assert boundary.top == div.position_y
+    assert boundary.bottom == div.position_y + div.margin_height()
+
+
+@assert_no_logs
+def test_box_boundary_padding_box_bounds():
+    """Test BoxBoundary padding-box bounds computation."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 80px;
+                margin: 10px;
+                padding: 5px;
+                border: 2px solid black;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    boundary = BoxBoundary(div, 'padding-box')
+    # Horizontal bounds use padding-box
+    assert boundary.left == div.padding_box_x()
+    assert boundary.right == div.padding_box_x() + div.padding_width()
+    # Vertical extent always uses margin-box for collision detection
+    assert boundary.top == div.position_y
+    assert boundary.bottom == div.position_y + div.margin_height()
+
+
+@assert_no_logs
+def test_box_boundary_content_box_bounds():
+    """Test BoxBoundary content-box bounds computation."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 80px;
+                margin: 10px;
+                padding: 5px;
+                border: 2px solid black;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    boundary = BoxBoundary(div, 'content-box')
+    # Horizontal bounds use content-box
+    assert boundary.left == div.content_box_x()
+    assert boundary.right == div.content_box_x() + div.width
+    # Vertical extent always uses margin-box for collision detection
+    assert boundary.top == div.position_y
+    assert boundary.bottom == div.position_y + div.margin_height()
+
+
+@assert_no_logs
+def test_box_boundary_get_bounds_at_y_within_extent():
+    """Test get_bounds_at_y returns correct bounds within vertical extent."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 80px;
+                margin: 10px;
+                padding: 5px;
+                border: 2px solid black;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    boundary = BoxBoundary(div, 'margin-box')
+    top, bottom = boundary.get_vertical_extent()
+
+    # Test at various Y positions within the extent
+    y_middle = (top + bottom) / 2
+    bounds = boundary.get_bounds_at_y(y_middle)
+    assert bounds is not None
+    assert bounds == (boundary.left, boundary.right)
+
+    # Test at top edge
+    bounds_top = boundary.get_bounds_at_y(top)
+    assert bounds_top is not None
+    assert bounds_top == (boundary.left, boundary.right)
+
+    # Test at bottom edge
+    bounds_bottom = boundary.get_bounds_at_y(bottom)
+    assert bounds_bottom is not None
+    assert bounds_bottom == (boundary.left, boundary.right)
+
+
+@assert_no_logs
+def test_box_boundary_get_bounds_at_y_always_returns_bounds():
+    """Test get_bounds_at_y always returns bounds for BoxBoundary.
+
+    For rectangular box-based shapes, horizontal bounds are constant
+    regardless of Y position. The collision detection in avoid_collisions()
+    handles vertical overlap checking, so get_bounds_at_y() always returns
+    the bounds.
+    """
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 80px;
+                margin: 10px;
+                padding: 5px;
+                border: 2px solid black;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    boundary = BoxBoundary(div, 'margin-box')
+    top, bottom = boundary.get_vertical_extent()
+
+    # For BoxBoundary, bounds are always returned regardless of Y
+    # because horizontal bounds are constant for rectangular shapes
+    bounds_above = boundary.get_bounds_at_y(top - 100)
+    assert bounds_above == (boundary.left, boundary.right)
+
+    bounds_below = boundary.get_bounds_at_y(bottom + 100)
+    assert bounds_below == (boundary.left, boundary.right)
+
+
+@assert_no_logs
+def test_box_boundary_get_vertical_extent():
+    """Test get_vertical_extent returns correct range.
+
+    For BoxBoundary, vertical extent always uses margin-box for
+    collision detection, regardless of the box_type setting.
+    """
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 80px;
+                margin: 10px;
+                padding: 5px;
+                border: 2px solid black;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    # Test for margin-box
+    boundary_margin = BoxBoundary(div, 'margin-box')
+    top, bottom = boundary_margin.get_vertical_extent()
+    assert top == div.position_y
+    assert bottom == div.position_y + div.margin_height()
+
+    # Test for content-box - vertical extent still uses margin-box
+    boundary_content = BoxBoundary(div, 'content-box')
+    top, bottom = boundary_content.get_vertical_extent()
+    assert top == div.position_y
+    assert bottom == div.position_y + div.margin_height()
+
+
+# ---------------------------------------------------------------------------
+# create_shape_boundary Factory Function Unit Tests
+# ---------------------------------------------------------------------------
+
+@assert_no_logs
+@pytest.mark.parametrize('shape_outside,expected_box_type', [
+    ('none', 'margin-box'),
+    ('margin-box', 'margin-box'),
+    ('border-box', 'border-box'),
+    ('padding-box', 'padding-box'),
+    ('content-box', 'content-box'),
+])
+def test_create_shape_boundary_returns_correct_type(shape_outside, expected_box_type):
+    """Test create_shape_boundary returns correct boundary type for each keyword."""
+    page, = render_pages(f'''
+        <style>
+            div {{
+                float: left;
+                width: 100px;
+                height: 80px;
+                margin: 10px;
+                padding: 5px;
+                border: 2px solid black;
+                shape-outside: {shape_outside};
+            }}
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    boundary = create_shape_boundary(div)
+    assert isinstance(boundary, BoxBoundary)
+    assert boundary.box_type == expected_box_type
+
+
+@assert_no_logs
+def test_create_shape_boundary_default_none():
+    """Test create_shape_boundary default behavior for 'none'."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 80px;
+                shape-outside: none;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    boundary = create_shape_boundary(div)
+    # 'none' should behave like 'margin-box'
+    assert isinstance(boundary, BoxBoundary)
+    assert boundary.box_type == 'margin-box'
+    assert boundary.left == div.position_x
+    assert boundary.right == div.position_x + div.margin_width()
+
+
+@assert_no_logs
+def test_float_has_shape_boundary_attached():
+    """Test that floated boxes have shape_boundary attribute after layout."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 80px;
+                margin: 10px;
+                shape-outside: border-box;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    # After layout, the float should have a shape_boundary attribute
+    assert hasattr(div, 'shape_boundary')
+    assert isinstance(div.shape_boundary, BoxBoundary)
+    assert div.shape_boundary.box_type == 'border-box'
+
+
+@assert_no_logs
+def test_shape_boundary_matches_get_shape_box_bounds():
+    """Test that shape boundary bounds match get_shape_box_bounds output."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 80px;
+                margin: 10px;
+                padding: 5px;
+                border: 2px solid black;
+                shape-outside: padding-box;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    # Get bounds from both methods
+    old_x, old_width = get_shape_box_bounds(div)
+    boundary = div.shape_boundary
+    new_left = boundary.left
+    new_right = boundary.right
+
+    # They should match
+    assert new_left == old_x
+    assert new_right == old_x + old_width
 
 
 # ---------------------------------------------------------------------------
