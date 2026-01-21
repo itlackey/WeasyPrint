@@ -1197,7 +1197,19 @@ Use this section to track important decisions, open questions, and notes during 
 - Stage Gate Passed: January 21, 2026 ✅
 - Completed By: Claude Code (Coding Agent + Review Agent)
 
+### Bug Fix Phase (Post Architect Review)
+- Review Date: January 21, 2026
+- Fixes Applied: January 21, 2026 ✅
+- Issues Fixed:
+  - CircleBoundary: Return None for zero/negative radius
+  - EllipseBoundary: Return None for zero/negative rx or ry
+  - PolygonBoundary: Mark polygons with < 3 points as degenerate
+  - InsetBoundary: Guard sqrt operations with max(0, ...) for floating-point precision
+- New Edge Case Tests: 11 tests added
+- Total Tests: 128 shape-outside tests passing
+
 ### Final Release
 - Validation Date: January 21, 2026 ✅
-- Total Tests: 117 shape-outside tests, 1001 layout tests passing
+- Bug Fixes Commit: caf4a91
+- Total Tests: 128 shape-outside tests, 1001 layout tests passing
 - Branch: claude/analyze-shape-outside-support-Hf6eY
