@@ -537,24 +537,65 @@ def shape_outside(tokens):
     - circle(): Defines a circular shape.
     - ellipse(): Defines an elliptical shape.
     - polygon(): Defines a polygonal shape.
+    - inset(): Defines a rectangular inset shape.
+    - Shape function + box keyword combination (e.g., circle(50%) border-box)
 
     See https://www.w3.org/TR/css-shapes-1/#shape-outside-property
     """
+    box_keywords = ('margin-box', 'border-box', 'padding-box', 'content-box')
+
     if len(tokens) == 1:
         token = tokens[0]
         if token.type == 'ident':
             keyword = token.lower_value
-            if keyword in ('none', 'margin-box', 'border-box',
-                           'padding-box', 'content-box'):
+            if keyword == 'none' or keyword in box_keywords:
                 return keyword
         # Handle shape functions
         if token.type == 'function':
             return _parse_shape_function(token)
+
+    elif len(tokens) == 2:
+        # Handle shape function + reference box combination
+        # Can be: function box-keyword OR box-keyword function
+        first, second = tokens
+
+        shape = None
+        ref_box = None
+
+        if first.type == 'function' and second.type == 'ident':
+            shape = _parse_shape_function(first)
+            if second.lower_value in box_keywords:
+                ref_box = second.lower_value
+        elif first.type == 'ident' and second.type == 'function':
+            if first.lower_value in box_keywords:
+                ref_box = first.lower_value
+            shape = _parse_shape_function(second)
+
+        if shape and ref_box:
+            # Return shape with reference box as a combined tuple
+            return ('shape_with_box', shape, ref_box)
+
+    return None
+
+
+@property()
+@single_token
+def shape_margin(token):
+    """``shape-margin`` property validation.
+
+    Adds a margin to the shape-outside, expanding the area around which
+    content wraps. Must be a non-negative length or percentage.
+
+    See https://www.w3.org/TR/css-shapes-1/#shape-margin-property
+    """
+    length = get_length(token, negative=False, percentage=True)
+    if length is not None:
+        return length
     return None
 
 
 def _parse_shape_function(token):
-    """Parse a shape function (circle, ellipse, polygon)."""
+    """Parse a shape function (circle, ellipse, polygon, inset)."""
     name = token.lower_name
 
     if name == 'circle':
@@ -563,6 +604,8 @@ def _parse_shape_function(token):
         return _parse_ellipse(token)
     elif name == 'polygon':
         return _parse_polygon(token)
+    elif name == 'inset':
+        return _parse_inset(token)
 
     return None
 
@@ -807,6 +850,79 @@ def _parse_polygon_point(tokens):
         return None
 
     return (x, y)
+
+
+def _parse_inset(token):
+    """Parse inset() shape function.
+
+    Syntax: inset(offset{1,4} round border-radius?)
+    - offset: 1-4 length/percentage values (like margin/padding shorthand)
+    - border-radius: optional corner radii after 'round' keyword
+
+    Returns: ('inset', (top, right, bottom, left), border_radius) or None if invalid
+    """
+    arguments = list(token.arguments)
+
+    # Find 'round' keyword if present
+    round_index = None
+    for i, arg in enumerate(arguments):
+        if arg.type == 'ident' and arg.lower_value == 'round':
+            round_index = i
+            break
+
+    # Split tokens into offsets and radius parts
+    if round_index is not None:
+        offset_tokens = arguments[:round_index]
+        radius_tokens = arguments[round_index + 1:]
+    else:
+        offset_tokens = arguments
+        radius_tokens = []
+
+    # Remove whitespace from offset tokens
+    offset_tokens = [t for t in offset_tokens if t.type != 'whitespace']
+
+    # Parse 1-4 offset values
+    offsets = []
+    for tok in offset_tokens:
+        length = get_length(tok, percentage=True)
+        if length is None:
+            return None
+        offsets.append(length)
+
+    if not offsets or len(offsets) > 4:
+        return None
+
+    # Expand to 4 values (top, right, bottom, left) like CSS margin/padding
+    if len(offsets) == 1:
+        offsets = [offsets[0], offsets[0], offsets[0], offsets[0]]
+    elif len(offsets) == 2:
+        offsets = [offsets[0], offsets[1], offsets[0], offsets[1]]
+    elif len(offsets) == 3:
+        offsets = [offsets[0], offsets[1], offsets[2], offsets[1]]
+
+    # Parse border-radius (simplified - just get the values)
+    border_radius = None
+    if radius_tokens:
+        # Remove whitespace
+        radius_tokens = [t for t in radius_tokens if t.type != 'whitespace']
+        radii = []
+        for tok in radius_tokens:
+            length = get_length(tok, negative=False, percentage=True)
+            if length:
+                radii.append(length)
+        if radii:
+            # Expand radii to 4 values (top-left, top-right, bottom-right, bottom-left)
+            if len(radii) == 1:
+                radii = [radii[0], radii[0], radii[0], radii[0]]
+            elif len(radii) == 2:
+                radii = [radii[0], radii[1], radii[0], radii[1]]
+            elif len(radii) == 3:
+                radii = [radii[0], radii[1], radii[2], radii[1]]
+            elif len(radii) > 4:
+                radii = radii[:4]
+            border_radius = tuple(radii)
+
+    return ('inset', tuple(offsets), border_radius)
 
 
 @property()

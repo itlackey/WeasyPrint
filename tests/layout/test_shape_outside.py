@@ -1795,3 +1795,799 @@ def test_circle_position_keywords():
     assert boundary.cx == div.position_x
     assert boundary.cy == div.position_y
     assert boundary.radius == 30
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: inset() Shape Function Tests
+# ---------------------------------------------------------------------------
+
+from weasyprint.layout.shapes import InsetBoundary, MarginedBoundary
+
+
+@assert_no_logs
+def test_inset_parsing_single_value():
+    """Test inset() with single value applies to all sides."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: inset(10px);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'inset'
+    # All 4 values should be equal
+    offsets = shape_outside[1]
+    assert offsets[0].value == 10  # top
+    assert offsets[1].value == 10  # right
+    assert offsets[2].value == 10  # bottom
+    assert offsets[3].value == 10  # left
+
+
+@assert_no_logs
+def test_inset_parsing_two_values():
+    """Test inset() with two values (vertical, horizontal)."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: inset(10px 20px);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'inset'
+    offsets = shape_outside[1]
+    assert offsets[0].value == 10  # top
+    assert offsets[1].value == 20  # right
+    assert offsets[2].value == 10  # bottom
+    assert offsets[3].value == 20  # left
+
+
+@assert_no_logs
+def test_inset_parsing_three_values():
+    """Test inset() with three values (top, horizontal, bottom)."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: inset(10px 20px 30px);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'inset'
+    offsets = shape_outside[1]
+    assert offsets[0].value == 10  # top
+    assert offsets[1].value == 20  # right
+    assert offsets[2].value == 30  # bottom
+    assert offsets[3].value == 20  # left
+
+
+@assert_no_logs
+def test_inset_parsing_four_values():
+    """Test inset() with four values (top, right, bottom, left)."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: inset(10px 20px 30px 40px);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'inset'
+    offsets = shape_outside[1]
+    assert offsets[0].value == 10  # top
+    assert offsets[1].value == 20  # right
+    assert offsets[2].value == 30  # bottom
+    assert offsets[3].value == 40  # left
+
+
+@assert_no_logs
+def test_inset_parsing_with_percentages():
+    """Test inset() with percentage values."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: inset(10% 20%);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'inset'
+    offsets = shape_outside[1]
+    assert offsets[0].value == 10
+    assert offsets[0].unit == '%'
+    assert offsets[1].value == 20
+    assert offsets[1].unit == '%'
+
+
+@assert_no_logs
+def test_inset_parsing_with_round():
+    """Test inset() with border-radius (round keyword)."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: inset(10px round 5px);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'inset'
+    # Check border-radius
+    border_radius = shape_outside[2]
+    assert border_radius is not None
+    assert len(border_radius) == 4
+    assert border_radius[0].value == 5
+
+
+@assert_no_logs
+def test_inset_creates_boundary():
+    """Test that inset() creates InsetBoundary."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: inset(10px);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    assert hasattr(div, 'shape_boundary')
+    assert isinstance(div.shape_boundary, InsetBoundary)
+
+
+@assert_no_logs
+def test_inset_boundary_bounds():
+    """Test InsetBoundary computes correct bounds."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: inset(10px 20px 30px 40px);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    boundary = div.shape_boundary
+    assert isinstance(boundary, InsetBoundary)
+
+    # Reference is margin-box by default
+    ref_x = div.position_x
+    ref_y = div.position_y
+    ref_w = div.margin_width()
+    ref_h = div.margin_height()
+
+    # Expected bounds: ref + offset (left), ref + width - offset (right)
+    assert boundary.left == ref_x + 40  # left offset
+    assert boundary.top == ref_y + 10   # top offset
+    assert boundary.right == ref_x + ref_w - 20  # right offset
+    assert boundary.bottom == ref_y + ref_h - 30  # bottom offset
+
+
+def test_inset_boundary_get_bounds_at_y():
+    """Test InsetBoundary.get_bounds_at_y()."""
+    # Create a simple inset boundary
+    boundary = InsetBoundary(left=10, top=10, right=90, bottom=90)
+
+    # Within bounds
+    bounds = boundary.get_bounds_at_y(50)
+    assert bounds == (10, 90)
+
+    # At edges
+    bounds_top = boundary.get_bounds_at_y(10)
+    assert bounds_top == (10, 90)
+    bounds_bottom = boundary.get_bounds_at_y(90)
+    assert bounds_bottom == (10, 90)
+
+    # Outside bounds
+    assert boundary.get_bounds_at_y(5) is None
+    assert boundary.get_bounds_at_y(95) is None
+
+
+def test_inset_boundary_with_rounded_corners():
+    """Test InsetBoundary with rounded corners."""
+    # Inset with 10px corner radii
+    boundary = InsetBoundary(
+        left=0, top=0, right=100, bottom=100,
+        border_radius=(10, 10, 10, 10)
+    )
+
+    # At center, bounds should be full width
+    bounds_center = boundary.get_bounds_at_y(50)
+    assert bounds_center == (0, 100)
+
+    # Near top edge (within corner radius), bounds should be narrower
+    bounds_top = boundary.get_bounds_at_y(2)
+    assert bounds_top is not None
+    # The left bound should be greater than 0 due to rounding
+    assert bounds_top[0] > 0
+    assert bounds_top[1] < 100
+
+
+def test_inset_boundary_vertical_extent():
+    """Test InsetBoundary.get_vertical_extent()."""
+    boundary = InsetBoundary(left=10, top=20, right=90, bottom=80)
+    extent = boundary.get_vertical_extent()
+    assert extent == (20, 80)
+
+
+@assert_no_logs
+def test_inset_float_text_wrap():
+    """Test that text wraps correctly around inset shape."""
+    page, = render_pages('''
+        <style>
+            body { width: 200px; font-size: 0; }
+            .float {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: inset(0 50px 0 0);
+            }
+            img { width: 30px; height: 10px; vertical-align: top; }
+        </style>
+        <div class="float"></div>
+        <img src="pattern.png" />
+    ''')
+    html, = page.children
+    body, = html.children
+    float_div, anon_block = body.children
+    line, = anon_block.children
+    img, = line.children
+
+    # With inset(0 50px 0 0), the right side is inset by 50px
+    # So the shape is only 50px wide (100 - 50 = 50)
+    # Image should start at x=50 (not 100)
+    assert img.position_x == 50
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: shape-margin Property Tests
+# ---------------------------------------------------------------------------
+
+@assert_no_logs
+def test_shape_margin_parsing():
+    """Test shape-margin property parsing."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: circle(50px);
+                shape-margin: 10px;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_margin = div.style['shape_margin']
+    assert shape_margin.value == 10
+    assert shape_margin.unit == 'px'
+
+
+@assert_no_logs
+def test_shape_margin_parsing_percentage():
+    """Test shape-margin property parsing with percentage."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: circle(50px);
+                shape-margin: 10%;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_margin = div.style['shape_margin']
+    assert shape_margin.value == 10
+    assert shape_margin.unit == '%'
+
+
+@assert_no_logs
+def test_shape_margin_default():
+    """Test shape-margin default value is 0."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_margin = div.style['shape_margin']
+    assert shape_margin.value == 0
+
+
+@assert_no_logs
+def test_shape_margin_creates_margined_boundary():
+    """Test that shape-margin creates MarginedBoundary wrapper."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: circle(40px);
+                shape-margin: 10px;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    boundary = div.shape_boundary
+    assert isinstance(boundary, MarginedBoundary)
+    assert isinstance(boundary.inner, CircleBoundary)
+    assert boundary.margin == 10
+
+
+def test_margined_boundary_expands_bounds():
+    """Test MarginedBoundary expands inner bounds."""
+    inner = CircleBoundary(cx=50, cy=50, radius=20)
+    margined = MarginedBoundary(inner, margin=10)
+
+    # Inner circle at y=50 has bounds (30, 70)
+    # Margined should expand to (20, 80)
+    bounds = margined.get_bounds_at_y(50)
+    assert bounds is not None
+    assert abs(bounds[0] - 20) < 0.001
+    assert abs(bounds[1] - 80) < 0.001
+
+
+def test_margined_boundary_expands_vertical_extent():
+    """Test MarginedBoundary expands vertical extent."""
+    inner = CircleBoundary(cx=50, cy=50, radius=20)
+    margined = MarginedBoundary(inner, margin=10)
+
+    # Inner extent is (30, 70), margined should be (20, 80)
+    extent = margined.get_vertical_extent()
+    assert extent == (20, 80)
+
+
+def test_margined_boundary_handles_margin_zone():
+    """Test MarginedBoundary handles Y values in margin zone."""
+    inner = CircleBoundary(cx=50, cy=50, radius=20)
+    margined = MarginedBoundary(inner, margin=10)
+
+    # Y=25 is in margin zone (above inner shape top at 30)
+    bounds = margined.get_bounds_at_y(25)
+    assert bounds is not None
+    # Should have some valid bounds in the margin zone
+
+
+@assert_no_logs
+def test_shape_margin_with_box_keyword():
+    """Test shape-margin with box keyword shape."""
+    page, = render_pages('''
+        <style>
+            body { width: 200px; font-size: 0; }
+            .float {
+                float: left;
+                width: 50px;
+                height: 50px;
+                shape-outside: margin-box;
+                shape-margin: 10px;
+            }
+            img { width: 30px; height: 10px; vertical-align: top; }
+        </style>
+        <div class="float"></div>
+        <img src="pattern.png" />
+    ''')
+    html, = page.children
+    body, = html.children
+    float_div, anon_block = body.children
+    line, = anon_block.children
+    img, = line.children
+
+    # Float width is 50px, shape-margin adds 10px
+    # Image should start at 60px
+    assert img.position_x == 60
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Reference Box Combination Tests
+# ---------------------------------------------------------------------------
+
+@assert_no_logs
+def test_circle_with_border_box():
+    """Test circle() with border-box reference."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                margin: 20px;
+                padding: 10px;
+                border: 5px solid black;
+                shape-outside: circle(50%) border-box;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    # With border-box reference, the circle should be centered in border-box
+    # and radius should be 50% of border-box dimensions
+    boundary = div.shape_boundary
+    assert isinstance(boundary, CircleBoundary)
+
+    # Border box dimensions
+    border_width = div.border_width()  # 100 + 10*2 + 5*2 = 130
+    border_height = div.border_height()
+
+    # Center should be in border-box center
+    expected_cx = div.border_box_x() + border_width / 2
+    expected_cy = div.border_box_y() + border_height / 2
+
+    assert abs(boundary.cx - expected_cx) < 0.001
+    assert abs(boundary.cy - expected_cy) < 0.001
+
+
+@assert_no_logs
+def test_ellipse_with_content_box():
+    """Test ellipse() with content-box reference."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 80px;
+                margin: 20px;
+                padding: 10px;
+                border: 5px solid black;
+                shape-outside: ellipse(50% 50%) content-box;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    boundary = div.shape_boundary
+    assert isinstance(boundary, EllipseBoundary)
+
+    # Content box dimensions
+    content_width = div.width  # 100
+    content_height = div.height  # 80
+
+    # Radii should be 50% of content dimensions
+    expected_rx = content_width * 0.5  # 50
+    expected_ry = content_height * 0.5  # 40
+
+    assert abs(boundary.rx - expected_rx) < 0.001
+    assert abs(boundary.ry - expected_ry) < 0.001
+
+
+@assert_no_logs
+def test_polygon_with_padding_box():
+    """Test polygon() with padding-box reference."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                margin: 20px;
+                padding: 10px;
+                border: 5px solid black;
+                shape-outside: polygon(0 0, 100% 0, 100% 100%, 0 100%) padding-box;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    boundary = div.shape_boundary
+    assert isinstance(boundary, PolygonBoundary)
+
+    # Points should be relative to padding-box
+    padding_x = div.padding_box_x()
+    padding_y = div.padding_box_y()
+    padding_w = div.padding_width()
+    padding_h = div.padding_height()
+
+    assert boundary.points[0] == (padding_x, padding_y)
+    assert boundary.points[1] == (padding_x + padding_w, padding_y)
+    assert boundary.points[2] == (padding_x + padding_w, padding_y + padding_h)
+    assert boundary.points[3] == (padding_x, padding_y + padding_h)
+
+
+@assert_no_logs
+def test_inset_with_border_box():
+    """Test inset() with border-box reference."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                margin: 20px;
+                padding: 10px;
+                border: 5px solid black;
+                shape-outside: inset(10px) border-box;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    boundary = div.shape_boundary
+    assert isinstance(boundary, InsetBoundary)
+
+    # Inset should be relative to border-box
+    border_x = div.border_box_x()
+    border_y = div.border_box_y()
+    border_w = div.border_width()
+    border_h = div.border_height()
+
+    assert boundary.left == border_x + 10
+    assert boundary.top == border_y + 10
+    assert boundary.right == border_x + border_w - 10
+    assert boundary.bottom == border_y + border_h - 10
+
+
+@assert_no_logs
+def test_reference_box_order_reversed():
+    """Test reference box can come before shape function."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: content-box circle(50px);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    boundary = div.shape_boundary
+    assert isinstance(boundary, CircleBoundary)
+
+    # Circle should be centered in content-box
+    expected_cx = div.content_box_x() + div.width / 2
+    expected_cy = div.content_box_y() + div.height / 2
+
+    assert abs(boundary.cx - expected_cx) < 0.001
+    assert abs(boundary.cy - expected_cy) < 0.001
+
+
+@assert_no_logs
+def test_shape_margin_with_reference_box():
+    """Test shape-margin combined with reference box."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                padding: 10px;
+                border: 5px solid black;
+                shape-outside: circle(30px) content-box;
+                shape-margin: 5px;
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    boundary = div.shape_boundary
+    assert isinstance(boundary, MarginedBoundary)
+    assert isinstance(boundary.inner, CircleBoundary)
+    assert boundary.margin == 5
+
+    # Inner circle should use content-box reference
+    inner = boundary.inner
+    expected_cx = div.content_box_x() + div.width / 2
+    expected_cy = div.content_box_y() + div.height / 2
+
+    assert abs(inner.cx - expected_cx) < 0.001
+    assert abs(inner.cy - expected_cy) < 0.001
+    assert inner.radius == 30
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Integration Tests
+# ---------------------------------------------------------------------------
+
+@assert_no_logs
+def test_inset_with_margin_text_wrap():
+    """Test text wrapping with inset and shape-margin.
+
+    When the line is at y=0 (outside the shape's vertical extent of 5-95),
+    the margin box bounds are used as fallback per CSS Shapes spec.
+    """
+    page, = render_pages('''
+        <style>
+            body { width: 200px; font-size: 0; }
+            .float {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: inset(10px);
+                shape-margin: 5px;
+            }
+            img { width: 30px; height: 10px; vertical-align: top; }
+        </style>
+        <div class="float"></div>
+        <img src="pattern.png" />
+    ''')
+    html, = page.children
+    body, = html.children
+    float_div, anon_block = body.children
+    line, = anon_block.children
+    img, = line.children
+
+    # At y=0, which is outside the shape extent (5-95), the margin box is used
+    # Shape extent is: inset(10px) - margin(5px) = 5 to 95
+    # So image is positioned at margin box right edge (100px)
+    assert img.position_x == 100
+
+
+@assert_no_logs
+def test_inset_with_margin_inside_shape_extent():
+    """Test text wrapping within the shape's vertical extent."""
+    page, = render_pages('''
+        <style>
+            body { width: 200px; font-size: 0; }
+            .float {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: inset(5px);
+                shape-margin: 5px;
+            }
+            .spacer { height: 10px; }
+            img { width: 30px; height: 10px; vertical-align: top; }
+        </style>
+        <div class="float"></div>
+        <div class="spacer"></div>
+        <img src="pattern.png" />
+    ''')
+    html, = page.children
+    body, = html.children
+    float_div, spacer_block, anon_block = body.children
+    line, = anon_block.children
+    img, = line.children
+
+    # Float is 100x100, inset(5px) creates shape at (5,5) to (95,95)
+    # shape-margin: 5px expands to (0,0) to (100,100) effectively
+    # Line is at y=10 (after spacer), which is inside the shape extent
+    # Shape right bound at y=10: 95 + 5 = 100
+    # (since 10 > 0, the inner shape covers this y)
+    boundary = float_div.shape_boundary
+    bounds = boundary.get_bounds_at_y(10)
+    # The shape affects this line - inset right is at 95, plus margin = 100
+    assert bounds is not None
+    # Image should be at the shape's right bound
+    assert img.position_x == bounds[1]
+
+
+@assert_no_logs
+def test_complex_shape_with_all_features():
+    """Test combining circle, reference box, and shape-margin."""
+    page, = render_pages('''
+        <style>
+            body { width: 300px; font-size: 0; }
+            .float {
+                float: left;
+                width: 100px;
+                height: 100px;
+                margin: 10px;
+                padding: 5px;
+                border: 2px solid black;
+                shape-outside: circle(50%) border-box;
+                shape-margin: 10px;
+            }
+            img { width: 30px; height: 10px; vertical-align: top; }
+        </style>
+        <div class="float"></div>
+        <img src="pattern.png" />
+    ''')
+    html, = page.children
+    body, = html.children
+    float_div, anon_block = body.children
+
+    boundary = float_div.shape_boundary
+    assert isinstance(boundary, MarginedBoundary)
+    assert isinstance(boundary.inner, CircleBoundary)
+
+
+def test_inset_invalid_too_many_offsets():
+    """Test that inset() with more than 4 offsets is invalid."""
+    from ..testing_utils import capture_logs
+
+    with capture_logs() as logs:
+        page, = render_pages('''
+            <style>
+                div {
+                    float: left;
+                    width: 100px;
+                    height: 100px;
+                    shape-outside: inset(10px 20px 30px 40px 50px);
+                }
+            </style>
+            <div></div>
+        ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    # Should fall back to default 'none'
+    assert div.style['shape_outside'] == 'none'

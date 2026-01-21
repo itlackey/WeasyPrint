@@ -33,6 +33,7 @@ INITIAL_VALUES = {
     'position': 'static',
     'right': 'auto',
     'shape_outside': 'none',
+    'shape_margin': ZERO_PIXELS,
     'table_layout': 'auto',
     'top': 'auto',
     'unicode_bidi': 'normal',

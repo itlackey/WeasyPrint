@@ -228,6 +228,149 @@ class PolygonBoundary(ShapeBoundary):
         return (self.min_y, self.max_y)
 
 
+class InsetBoundary(ShapeBoundary):
+    """Inset rectangular boundary with optional rounded corners.
+
+    The inset() function creates a rectangular shape that is inset from
+    the reference box edges by the specified amounts.
+    """
+
+    def __init__(self, left, top, right, bottom, border_radius=None):
+        """Initialize inset boundary with absolute coordinates.
+
+        Args:
+            left: Left edge X coordinate (absolute)
+            top: Top edge Y coordinate (absolute)
+            right: Right edge X coordinate (absolute)
+            bottom: Bottom edge Y coordinate (absolute)
+            border_radius: Optional tuple of 4 corner radii
+        """
+        self.left = left
+        self.top = top
+        self.right = right
+        self.bottom = bottom
+        self.border_radius = border_radius
+
+    def get_bounds_at_y(self, y):
+        """Get horizontal bounds at Y, accounting for rounded corners."""
+        if y < self.top or y > self.bottom:
+            return None
+
+        left = self.left
+        right = self.right
+
+        # Handle rounded corners if present
+        if self.border_radius:
+            tl_r, tr_r, br_r, bl_r = self.border_radius
+
+            # Top-left corner adjustment
+            if tl_r > 0 and y < self.top + tl_r:
+                dy = y - self.top
+                # Circle equation: adjust left bound
+                if dy < tl_r:
+                    dx = tl_r - math.sqrt(tl_r**2 - (tl_r - dy)**2)
+                    left = max(left, self.left + dx)
+
+            # Top-right corner adjustment
+            if tr_r > 0 and y < self.top + tr_r:
+                dy = y - self.top
+                if dy < tr_r:
+                    dx = tr_r - math.sqrt(tr_r**2 - (tr_r - dy)**2)
+                    right = min(right, self.right - dx)
+
+            # Bottom-left corner adjustment
+            if bl_r > 0 and y > self.bottom - bl_r:
+                dy = self.bottom - y
+                if dy < bl_r:
+                    dx = bl_r - math.sqrt(bl_r**2 - (bl_r - dy)**2)
+                    left = max(left, self.left + dx)
+
+            # Bottom-right corner adjustment
+            if br_r > 0 and y > self.bottom - br_r:
+                dy = self.bottom - y
+                if dy < br_r:
+                    dx = br_r - math.sqrt(br_r**2 - (br_r - dy)**2)
+                    right = min(right, self.right - dx)
+
+        return (left, right)
+
+    def get_vertical_extent(self):
+        return (self.top, self.bottom)
+
+
+class MarginedBoundary(ShapeBoundary):
+    """Wrapper that expands an inner boundary by a margin amount.
+
+    This class wraps another ShapeBoundary and expands its bounds
+    outward by the specified margin amount.
+    """
+
+    def __init__(self, inner_boundary, margin):
+        """Initialize margined boundary.
+
+        Args:
+            inner_boundary: The inner ShapeBoundary to expand
+            margin: The margin amount to expand by (in pixels)
+        """
+        self.inner = inner_boundary
+        self.margin = margin
+
+    def get_bounds_at_y(self, y):
+        """Get horizontal bounds at Y, expanded by margin.
+
+        For non-circular shapes, this is a simplified implementation
+        that expands horizontal bounds and checks vertical extent.
+        """
+        inner_extent = self.inner.get_vertical_extent()
+        inner_top, inner_bottom = inner_extent
+
+        # Check if Y is within the expanded vertical range
+        if y < inner_top - self.margin or y > inner_bottom + self.margin:
+            return None
+
+        # Get inner bounds at this Y (or closest valid Y)
+        inner_bounds = self.inner.get_bounds_at_y(y)
+
+        if inner_bounds is not None:
+            # Simply expand the bounds by margin
+            left, right = inner_bounds
+            return (left - self.margin, right + self.margin)
+
+        # Y is in the margin zone above or below the inner shape
+        # For shapes like circles, we need to compute the expanded bounds
+        if y < inner_top:
+            # Above the inner shape - check at inner_top
+            inner_bounds = self.inner.get_bounds_at_y(inner_top)
+            if inner_bounds:
+                left, right = inner_bounds
+                # Expand based on circular expansion at the margin
+                dy = inner_top - y
+                if dy <= self.margin:
+                    # Compute horizontal expansion for circular margin
+                    dx = math.sqrt(self.margin**2 - dy**2)
+                    center = (left + right) / 2
+                    half_width = (right - left) / 2 + dx
+                    return (center - half_width, center + half_width)
+        elif y > inner_bottom:
+            # Below the inner shape - check at inner_bottom
+            inner_bounds = self.inner.get_bounds_at_y(inner_bottom)
+            if inner_bounds:
+                left, right = inner_bounds
+                dy = y - inner_bottom
+                if dy <= self.margin:
+                    dx = math.sqrt(self.margin**2 - dy**2)
+                    center = (left + right) / 2
+                    half_width = (right - left) / 2 + dx
+                    return (center - half_width, center + half_width)
+
+        return None
+
+    def get_vertical_extent(self):
+        """Get the vertical extent expanded by margin."""
+        inner_extent = self.inner.get_vertical_extent()
+        return (inner_extent[0] - self.margin, inner_extent[1] + self.margin)
+
+
 def create_shape_boundary(box):
     """Create a shape boundary for a floated box.
 
@@ -238,7 +381,37 @@ def create_shape_boundary(box):
         ShapeBoundary: A boundary object for computing shape exclusions.
     """
     shape_outside = box.style['shape_outside']
+    shape_margin = box.style['shape_margin']
 
+    # Determine the reference box type (default is margin-box)
+    ref_box_type = 'margin-box'
+
+    # Handle shape_with_box tuple: ('shape_with_box', shape, ref_box)
+    if isinstance(shape_outside, tuple) and shape_outside[0] == 'shape_with_box':
+        _, shape_outside, ref_box_type = shape_outside
+
+    # Create the base boundary
+    boundary = _create_base_boundary(box, shape_outside, ref_box_type)
+
+    # Apply shape-margin if specified (check value > 0)
+    if hasattr(shape_margin, 'value') and shape_margin.value > 0:
+        margin_value = resolve_position_value(shape_margin, box.margin_width())
+        boundary = MarginedBoundary(boundary, margin_value)
+
+    return boundary
+
+
+def _create_base_boundary(box, shape_outside, ref_box_type='margin-box'):
+    """Create the base shape boundary without margin.
+
+    Args:
+        box: The float box with shape_outside style.
+        shape_outside: The shape specification (string or tuple).
+        ref_box_type: The reference box type for shape functions.
+
+    Returns:
+        ShapeBoundary: A boundary object for computing shape exclusions.
+    """
     # String keywords
     if isinstance(shape_outside, str):
         if shape_outside in ('none', 'margin-box'):
@@ -255,17 +428,20 @@ def create_shape_boundary(box):
         shape_type = shape_outside[0]
 
         if shape_type == 'circle':
-            cx, cy, radius = resolve_circle_params(shape_outside, box)
+            cx, cy, radius = resolve_circle_params(shape_outside, box, ref_box_type)
             return CircleBoundary(cx, cy, radius)
 
         elif shape_type == 'ellipse':
-            cx, cy, rx, ry = resolve_ellipse_params(shape_outside, box)
+            cx, cy, rx, ry = resolve_ellipse_params(shape_outside, box, ref_box_type)
             return EllipseBoundary(cx, cy, rx, ry)
 
         elif shape_type == 'polygon':
-            points = resolve_polygon_params(shape_outside, box)
+            points = resolve_polygon_params(shape_outside, box, ref_box_type)
             fill_rule = shape_outside[1]
             return PolygonBoundary(points, fill_rule)
+
+        elif shape_type == 'inset':
+            return resolve_inset_boundary(shape_outside, box, ref_box_type)
 
     # Fallback
     return BoxBoundary(box, 'margin-box')
@@ -275,23 +451,55 @@ def create_shape_boundary(box):
 # Parameter Resolution Functions
 # ---------------------------------------------------------------------------
 
-def resolve_circle_params(shape_value, box):
+def get_reference_box(box, ref_box_type='margin-box'):
+    """Get the reference box coordinates for a given box type.
+
+    Args:
+        box: The float box
+        ref_box_type: One of 'margin-box', 'border-box', 'padding-box', 'content-box'
+
+    Returns:
+        Tuple (ref_x, ref_y, ref_w, ref_h) - position and dimensions
+    """
+    if ref_box_type == 'content-box':
+        ref_x = box.content_box_x()
+        ref_y = box.content_box_y()
+        ref_w = box.width
+        ref_h = box.height
+    elif ref_box_type == 'padding-box':
+        ref_x = box.padding_box_x()
+        ref_y = box.padding_box_y()
+        ref_w = box.padding_width()
+        ref_h = box.padding_height()
+    elif ref_box_type == 'border-box':
+        ref_x = box.border_box_x()
+        ref_y = box.border_box_y()
+        ref_w = box.border_width()
+        ref_h = box.border_height()
+    else:  # margin-box (default)
+        ref_x = box.position_x
+        ref_y = box.position_y
+        ref_w = box.margin_width()
+        ref_h = box.margin_height()
+
+    return (ref_x, ref_y, ref_w, ref_h)
+
+
+def resolve_circle_params(shape_value, box, ref_box_type='margin-box'):
     """Resolve circle() parameters to absolute values.
 
     Args:
         shape_value: Tuple ('circle', radius, position)
         box: The float box for resolving percentages
+        ref_box_type: The reference box type for resolving percentages
 
     Returns:
         Tuple (cx, cy, radius) in absolute coordinates
     """
     _, radius_spec, position = shape_value
 
-    # Reference box (margin-box by default for shapes)
-    ref_x = box.position_x
-    ref_y = box.position_y
-    ref_w = box.margin_width()
-    ref_h = box.margin_height()
+    # Get reference box dimensions
+    ref_x, ref_y, ref_w, ref_h = get_reference_box(box, ref_box_type)
 
     # Resolve position (cx, cy)
     cx = resolve_position_value(position[0], ref_w) + ref_x
@@ -304,23 +512,21 @@ def resolve_circle_params(shape_value, box):
     return (cx, cy, radius)
 
 
-def resolve_ellipse_params(shape_value, box):
+def resolve_ellipse_params(shape_value, box, ref_box_type='margin-box'):
     """Resolve ellipse() parameters to absolute values.
 
     Args:
         shape_value: Tuple ('ellipse', rx, ry, position)
         box: The float box for resolving percentages
+        ref_box_type: The reference box type for resolving percentages
 
     Returns:
         Tuple (cx, cy, rx, ry) in absolute coordinates
     """
     _, rx_spec, ry_spec, position = shape_value
 
-    # Reference box (margin-box by default for shapes)
-    ref_x = box.position_x
-    ref_y = box.position_y
-    ref_w = box.margin_width()
-    ref_h = box.margin_height()
+    # Get reference box dimensions
+    ref_x, ref_y, ref_w, ref_h = get_reference_box(box, ref_box_type)
 
     # Resolve position (cx, cy)
     cx = resolve_position_value(position[0], ref_w) + ref_x
@@ -335,23 +541,21 @@ def resolve_ellipse_params(shape_value, box):
     return (cx, cy, rx, ry)
 
 
-def resolve_polygon_params(shape_value, box):
+def resolve_polygon_params(shape_value, box, ref_box_type='margin-box'):
     """Resolve polygon() parameters to absolute values.
 
     Args:
         shape_value: Tuple ('polygon', fill_rule, ((x1,y1), (x2,y2), ...))
         box: The float box for resolving percentages
+        ref_box_type: The reference box type for resolving percentages
 
     Returns:
         List of (x, y) tuples in absolute coordinates
     """
     _, fill_rule, point_specs = shape_value
 
-    # Reference box (margin-box by default for shapes)
-    ref_x = box.position_x
-    ref_y = box.position_y
-    ref_w = box.margin_width()
-    ref_h = box.margin_height()
+    # Get reference box dimensions
+    ref_x, ref_y, ref_w, ref_h = get_reference_box(box, ref_box_type)
 
     points = []
     for x_spec, y_spec in point_specs:
@@ -360,6 +564,48 @@ def resolve_polygon_params(shape_value, box):
         points.append((x, y))
 
     return points
+
+
+def resolve_inset_boundary(shape_value, box, ref_box_type='margin-box'):
+    """Resolve inset() parameters and create an InsetBoundary.
+
+    Args:
+        shape_value: Tuple ('inset', (top, right, bottom, left), border_radius)
+        box: The float box for resolving percentages
+        ref_box_type: The reference box type for resolving percentages
+
+    Returns:
+        InsetBoundary with absolute coordinates
+    """
+    _, offsets, border_radius = shape_value
+
+    # Get reference box dimensions
+    ref_x, ref_y, ref_w, ref_h = get_reference_box(box, ref_box_type)
+
+    # Resolve offsets (top, right, bottom, left)
+    top_offset = resolve_position_value(offsets[0], ref_h)
+    right_offset = resolve_position_value(offsets[1], ref_w)
+    bottom_offset = resolve_position_value(offsets[2], ref_h)
+    left_offset = resolve_position_value(offsets[3], ref_w)
+
+    # Calculate absolute bounds of the inset rectangle
+    inset_left = ref_x + left_offset
+    inset_top = ref_y + top_offset
+    inset_right = ref_x + ref_w - right_offset
+    inset_bottom = ref_y + ref_h - bottom_offset
+
+    # Resolve border-radius if present
+    resolved_radius = None
+    if border_radius:
+        # border_radius is a tuple of 4 values (tl, tr, br, bl)
+        # Resolve each to absolute pixels
+        resolved_radius = tuple(
+            resolve_position_value(r, min(ref_w, ref_h))
+            for r in border_radius
+        )
+
+    return InsetBoundary(inset_left, inset_top, inset_right, inset_bottom,
+                         resolved_radius)
 
 
 def resolve_position_value(value, reference_length):

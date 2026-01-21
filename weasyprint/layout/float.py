@@ -207,8 +207,14 @@ def avoid_collisions(context, box, containing_block, outer=True):
             if hasattr(shape, 'shape_boundary'):
                 bounds = shape.shape_boundary.get_bounds_at_y(position_y)
                 if bounds is None:
-                    continue
-                shape_left, shape_right = bounds
+                    # When y is outside the shape's vertical extent but inside
+                    # the float's margin box, fall back to margin box bounds.
+                    # This matches CSS Shapes spec behavior.
+                    shape_x, shape_width = get_shape_box_bounds(shape)
+                    shape_left = shape_x
+                    shape_right = shape_x + shape_width
+                else:
+                    shape_left, shape_right = bounds
             else:
                 shape_x, shape_width = get_shape_box_bounds(shape)
                 shape_left = shape_x
