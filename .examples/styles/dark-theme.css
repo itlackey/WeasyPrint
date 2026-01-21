@@ -14,7 +14,7 @@
 
 @font-face {
   font-family: 'lixdu';
-  src: url('../../fonts/lixdu.woff') format('woff');
+  src: url('../fonts/lixdu.woff') format('woff');
   font-weight: normal;
   font-style: normal;
   letter-spacing: 0.1em;
@@ -739,7 +739,7 @@ li::marker {
   height: 2in;
   margin-right: 0.15in;
   /* Image-based shape: text wraps around the image's alpha channel */
-  shape-outside: url('../../images/daggercat.png');
+  shape-outside: url('../images/stick-figure.png');
   shape-image-threshold: 0.5;
   shape-margin: 0.1in;
 }
