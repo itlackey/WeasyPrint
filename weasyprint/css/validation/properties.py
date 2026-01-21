@@ -521,6 +521,28 @@ def box_sizing(keyword):
 
 @property()
 @single_keyword
+def shape_outside(keyword):
+    """``shape-outside`` property validation.
+
+    Validates the shape-outside property with box keyword values.
+    This property specifies the shape around which inline content wraps
+    when flowing around a floated element.
+
+    Supported values:
+    - none: No shape is applied (default).
+    - margin-box: Uses the margin box as the reference shape.
+    - border-box: Uses the border box as the reference shape.
+    - padding-box: Uses the padding box as the reference shape.
+    - content-box: Uses the content box as the reference shape.
+
+    See https://www.w3.org/TR/css-shapes-1/#shape-outside-property
+    """
+    return keyword in ('none', 'margin-box', 'border-box',
+                       'padding-box', 'content-box')
+
+
+@property()
+@single_keyword
 def caption_side(keyword):
     """``caption-side`` properties validation."""
     return keyword in ('top', 'bottom')

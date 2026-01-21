@@ -32,6 +32,7 @@ INITIAL_VALUES = {
     'padding_left': ZERO_PIXELS,
     'position': 'static',
     'right': 'auto',
+    'shape_outside': 'none',
     'table_layout': 'auto',
     'top': 'auto',
     'unicode_bidi': 'normal',

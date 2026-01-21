@@ -10,6 +10,42 @@ from .replaced import inline_replaced_box_width_height
 from .table import table_wrapper_width
 
 
+def get_shape_box_bounds(box):
+    """Get the x position and width for a floated box's exclusion area.
+
+    The shape-outside property determines which box model is used to calculate
+    the exclusion area around which inline content wraps.
+
+    Args:
+        box: A floated box with a style attribute containing shape_outside.
+
+    Returns:
+        A tuple (x, width) where:
+        - x is the left edge x-coordinate of the exclusion area
+        - width is the width of the exclusion area
+
+    The returned values depend on the shape-outside property value:
+    - 'none' or 'margin-box': Uses the margin box (default float behavior)
+    - 'border-box': Uses the border box
+    - 'padding-box': Uses the padding box
+    - 'content-box': Uses the content box
+    """
+    shape_outside = box.style['shape_outside']
+
+    if shape_outside in ('none', 'margin-box'):
+        # Default behavior: use margin box
+        return box.position_x, box.margin_width()
+    elif shape_outside == 'border-box':
+        return box.border_box_x(), box.border_width()
+    elif shape_outside == 'padding-box':
+        return box.padding_box_x(), box.padding_width()
+    elif shape_outside == 'content-box':
+        return box.content_box_x(), box.width
+    else:
+        # Fallback to margin box for any unknown values
+        return box.position_x, box.margin_width()
+
+
 @handle_min_max_width
 def float_width(box, context, containing_block):
     # Check that box.width is auto even if the caller does it too, because
@@ -156,14 +192,19 @@ def avoid_collisions(context, box, containing_block, outer=True):
                  shape_position_y + shape_margin_height <=
                  position_y + box_height)):
                 colliding_shapes.append(shape)
-        left_bounds = [
-            shape.position_x + shape.margin_width()
-            for shape in colliding_shapes
-            if shape.style['float'] == 'left']
-        right_bounds = [
-            shape.position_x
-            for shape in colliding_shapes
-            if shape.style['float'] == 'right']
+        # Calculate left and right bounds using shape-outside property.
+        # The shape-outside property determines which box model is used for
+        # the exclusion area around floated elements.
+        left_bounds = []
+        right_bounds = []
+        for shape in colliding_shapes:
+            shape_x, shape_width = get_shape_box_bounds(shape)
+            if shape.style['float'] == 'left':
+                # For left floats, content wraps to the right of the exclusion
+                left_bounds.append(shape_x + shape_width)
+            elif shape.style['float'] == 'right':
+                # For right floats, content wraps to the left of the exclusion
+                right_bounds.append(shape_x)
 
         # Set the default maximum bounds
         max_left_bound = containing_block.content_box_x()
