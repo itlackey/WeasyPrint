@@ -5,6 +5,7 @@ around floated elements. Each boundary class implements the same interface
 for querying shape bounds at specific Y coordinates.
 """
 
+import math
 from abc import ABC, abstractmethod
 
 
@@ -103,6 +104,130 @@ class BoxBoundary(ShapeBoundary):
         return (self.top, self.bottom)
 
 
+class CircleBoundary(ShapeBoundary):
+    """Circular boundary for circle() shape function."""
+
+    def __init__(self, cx, cy, radius):
+        """Initialize circle boundary with absolute coordinates.
+
+        Args:
+            cx: Center X coordinate (absolute)
+            cy: Center Y coordinate (absolute)
+            radius: Circle radius (absolute)
+        """
+        self.cx = cx
+        self.cy = cy
+        self.radius = radius
+
+    def get_bounds_at_y(self, y):
+        """Get horizontal bounds at Y using circle equation."""
+        dy = y - self.cy
+        if abs(dy) > self.radius:
+            return None  # Y is outside circle
+        # Circle equation: (x-cx)^2 + (y-cy)^2 = r^2
+        # Solve for x: x = cx +/- sqrt(r^2 - (y-cy)^2)
+        dx = math.sqrt(self.radius**2 - dy**2)
+        return (self.cx - dx, self.cx + dx)
+
+    def get_vertical_extent(self):
+        return (self.cy - self.radius, self.cy + self.radius)
+
+
+class EllipseBoundary(ShapeBoundary):
+    """Elliptical boundary for ellipse() shape function."""
+
+    def __init__(self, cx, cy, rx, ry):
+        """Initialize ellipse boundary with absolute coordinates.
+
+        Args:
+            cx: Center X coordinate (absolute)
+            cy: Center Y coordinate (absolute)
+            rx: Horizontal radius (absolute)
+            ry: Vertical radius (absolute)
+        """
+        self.cx = cx
+        self.cy = cy
+        self.rx = rx  # horizontal radius
+        self.ry = ry  # vertical radius
+
+    def get_bounds_at_y(self, y):
+        """Get horizontal bounds at Y using ellipse equation."""
+        dy = y - self.cy
+        if abs(dy) > self.ry:
+            return None
+        # Ellipse equation: (x-cx)^2/rx^2 + (y-cy)^2/ry^2 = 1
+        # Solve for x: x = cx +/- rx * sqrt(1 - (y-cy)^2/ry^2)
+        ratio = 1 - (dy**2 / self.ry**2)
+        if ratio < 0:
+            return None
+        dx = self.rx * math.sqrt(ratio)
+        return (self.cx - dx, self.cx + dx)
+
+    def get_vertical_extent(self):
+        return (self.cy - self.ry, self.cy + self.ry)
+
+
+class PolygonBoundary(ShapeBoundary):
+    """Polygon boundary using scanline intersection."""
+
+    def __init__(self, points, fill_rule='nonzero'):
+        """Initialize with list of absolute (x, y) coordinate tuples.
+
+        Args:
+            points: List of (x, y) tuples in absolute coordinates
+            fill_rule: 'nonzero' or 'evenodd' (currently only affects
+                       future enhancements for complex polygons)
+        """
+        self.points = points
+        self.fill_rule = fill_rule
+        # Precompute vertical extent
+        if points:
+            ys = [p[1] for p in points]
+            self.min_y = min(ys)
+            self.max_y = max(ys)
+        else:
+            self.min_y = 0
+            self.max_y = 0
+
+    def get_bounds_at_y(self, y):
+        """Get horizontal bounds at Y using scanline intersection."""
+        if y < self.min_y or y > self.max_y:
+            return None
+
+        if not self.points:
+            return None
+
+        # Scanline intersection algorithm
+        intersections = []
+        n = len(self.points)
+
+        for i in range(n):
+            x1, y1 = self.points[i]
+            x2, y2 = self.points[(i + 1) % n]
+
+            # Skip horizontal edges
+            if y1 == y2:
+                continue
+
+            # Check if scanline intersects this edge
+            if not (min(y1, y2) <= y <= max(y1, y2)):
+                continue
+
+            # Calculate x intersection using linear interpolation
+            t = (y - y1) / (y2 - y1)
+            x = x1 + t * (x2 - x1)
+            intersections.append(x)
+
+        if len(intersections) < 2:
+            return None
+
+        intersections.sort()
+        return (intersections[0], intersections[-1])
+
+    def get_vertical_extent(self):
+        return (self.min_y, self.max_y)
+
+
 def create_shape_boundary(box):
     """Create a shape boundary for a floated box.
 
@@ -114,15 +239,236 @@ def create_shape_boundary(box):
     """
     shape_outside = box.style['shape_outside']
 
-    if shape_outside in ('none', 'margin-box'):
-        return BoxBoundary(box, 'margin-box')
-    elif shape_outside == 'border-box':
-        return BoxBoundary(box, 'border-box')
-    elif shape_outside == 'padding-box':
-        return BoxBoundary(box, 'padding-box')
-    elif shape_outside == 'content-box':
-        return BoxBoundary(box, 'content-box')
+    # String keywords
+    if isinstance(shape_outside, str):
+        if shape_outside in ('none', 'margin-box'):
+            return BoxBoundary(box, 'margin-box')
+        elif shape_outside == 'border-box':
+            return BoxBoundary(box, 'border-box')
+        elif shape_outside == 'padding-box':
+            return BoxBoundary(box, 'padding-box')
+        elif shape_outside == 'content-box':
+            return BoxBoundary(box, 'content-box')
 
-    # For future shape functions, we'll add handling here
-    # For now, fall back to margin-box
+    # Shape functions (tuples)
+    elif isinstance(shape_outside, tuple):
+        shape_type = shape_outside[0]
+
+        if shape_type == 'circle':
+            cx, cy, radius = resolve_circle_params(shape_outside, box)
+            return CircleBoundary(cx, cy, radius)
+
+        elif shape_type == 'ellipse':
+            cx, cy, rx, ry = resolve_ellipse_params(shape_outside, box)
+            return EllipseBoundary(cx, cy, rx, ry)
+
+        elif shape_type == 'polygon':
+            points = resolve_polygon_params(shape_outside, box)
+            fill_rule = shape_outside[1]
+            return PolygonBoundary(points, fill_rule)
+
+    # Fallback
     return BoxBoundary(box, 'margin-box')
+
+
+# ---------------------------------------------------------------------------
+# Parameter Resolution Functions
+# ---------------------------------------------------------------------------
+
+def resolve_circle_params(shape_value, box):
+    """Resolve circle() parameters to absolute values.
+
+    Args:
+        shape_value: Tuple ('circle', radius, position)
+        box: The float box for resolving percentages
+
+    Returns:
+        Tuple (cx, cy, radius) in absolute coordinates
+    """
+    _, radius_spec, position = shape_value
+
+    # Reference box (margin-box by default for shapes)
+    ref_x = box.position_x
+    ref_y = box.position_y
+    ref_w = box.margin_width()
+    ref_h = box.margin_height()
+
+    # Resolve position (cx, cy)
+    cx = resolve_position_value(position[0], ref_w) + ref_x
+    cy = resolve_position_value(position[1], ref_h) + ref_y
+
+    # Resolve radius
+    radius = resolve_shape_radius(
+        radius_spec, ref_w, ref_h, cx, cy, ref_x, ref_y)
+
+    return (cx, cy, radius)
+
+
+def resolve_ellipse_params(shape_value, box):
+    """Resolve ellipse() parameters to absolute values.
+
+    Args:
+        shape_value: Tuple ('ellipse', rx, ry, position)
+        box: The float box for resolving percentages
+
+    Returns:
+        Tuple (cx, cy, rx, ry) in absolute coordinates
+    """
+    _, rx_spec, ry_spec, position = shape_value
+
+    # Reference box (margin-box by default for shapes)
+    ref_x = box.position_x
+    ref_y = box.position_y
+    ref_w = box.margin_width()
+    ref_h = box.margin_height()
+
+    # Resolve position (cx, cy)
+    cx = resolve_position_value(position[0], ref_w) + ref_x
+    cy = resolve_position_value(position[1], ref_h) + ref_y
+
+    # Resolve radii
+    rx = resolve_ellipse_radius(
+        rx_spec, ref_w, ref_h, cx, cy, ref_x, ref_y, is_horizontal=True)
+    ry = resolve_ellipse_radius(
+        ry_spec, ref_w, ref_h, cx, cy, ref_x, ref_y, is_horizontal=False)
+
+    return (cx, cy, rx, ry)
+
+
+def resolve_polygon_params(shape_value, box):
+    """Resolve polygon() parameters to absolute values.
+
+    Args:
+        shape_value: Tuple ('polygon', fill_rule, ((x1,y1), (x2,y2), ...))
+        box: The float box for resolving percentages
+
+    Returns:
+        List of (x, y) tuples in absolute coordinates
+    """
+    _, fill_rule, point_specs = shape_value
+
+    # Reference box (margin-box by default for shapes)
+    ref_x = box.position_x
+    ref_y = box.position_y
+    ref_w = box.margin_width()
+    ref_h = box.margin_height()
+
+    points = []
+    for x_spec, y_spec in point_specs:
+        x = resolve_position_value(x_spec, ref_w) + ref_x
+        y = resolve_position_value(y_spec, ref_h) + ref_y
+        points.append((x, y))
+
+    return points
+
+
+def resolve_position_value(value, reference_length):
+    """Resolve a position value (length or percentage) to absolute.
+
+    Args:
+        value: A Dimension with unit, or a numeric value
+        reference_length: The reference length for percentage calculations
+
+    Returns:
+        Absolute value (float)
+    """
+    if hasattr(value, 'unit'):
+        if value.unit == '%':
+            return value.value * reference_length / 100
+        elif value.unit == 'px':
+            return value.value
+        elif value.unit is None:
+            # Unitless value (e.g., 0)
+            return value.value
+        else:
+            # TODO: handle other units (would need computed_values)
+            # For now, assume px
+            return value.value
+    return float(value)
+
+
+def resolve_shape_radius(radius_spec, ref_w, ref_h, cx, cy, ref_x, ref_y):
+    """Resolve a circle shape radius keyword or value.
+
+    Args:
+        radius_spec: 'closest-side', 'farthest-side', or Dimension
+        ref_w, ref_h: Reference box width and height
+        cx, cy: Center coordinates (absolute)
+        ref_x, ref_y: Reference box position (absolute)
+
+    Returns:
+        Absolute radius value (float)
+    """
+    if isinstance(radius_spec, str):
+        if radius_spec == 'closest-side':
+            # Distance to closest side from center
+            return min(
+                cx - ref_x,           # left side
+                ref_x + ref_w - cx,   # right side
+                cy - ref_y,           # top side
+                ref_y + ref_h - cy    # bottom side
+            )
+        elif radius_spec == 'farthest-side':
+            return max(
+                cx - ref_x,
+                ref_x + ref_w - cx,
+                cy - ref_y,
+                ref_y + ref_h - cy
+            )
+    elif hasattr(radius_spec, 'unit'):
+        if radius_spec.unit == 'px':
+            return radius_spec.value
+        elif radius_spec.unit == '%':
+            # For circle percentage, resolve against:
+            # sqrt(width^2 + height^2) / sqrt(2)
+            ref_length = math.sqrt(ref_w**2 + ref_h**2) / math.sqrt(2)
+            return radius_spec.value * ref_length / 100
+        elif radius_spec.unit is None:
+            return radius_spec.value
+        else:
+            # TODO: handle other units
+            return radius_spec.value
+
+    return 0  # Fallback
+
+
+def resolve_ellipse_radius(radius_spec, ref_w, ref_h, cx, cy, ref_x, ref_y,
+                           is_horizontal=True):
+    """Resolve an ellipse radius keyword or value.
+
+    Args:
+        radius_spec: 'closest-side', 'farthest-side', or Dimension
+        ref_w, ref_h: Reference box width and height
+        cx, cy: Center coordinates (absolute)
+        ref_x, ref_y: Reference box position (absolute)
+        is_horizontal: True for rx (horizontal radius), False for ry
+
+    Returns:
+        Absolute radius value (float)
+    """
+    if isinstance(radius_spec, str):
+        if radius_spec == 'closest-side':
+            if is_horizontal:
+                return min(cx - ref_x, ref_x + ref_w - cx)
+            else:
+                return min(cy - ref_y, ref_y + ref_h - cy)
+        elif radius_spec == 'farthest-side':
+            if is_horizontal:
+                return max(cx - ref_x, ref_x + ref_w - cx)
+            else:
+                return max(cy - ref_y, ref_y + ref_h - cy)
+    elif hasattr(radius_spec, 'unit'):
+        if radius_spec.unit == 'px':
+            return radius_spec.value
+        elif radius_spec.unit == '%':
+            # For ellipse percentage, resolve against the
+            # corresponding reference axis
+            ref_length = ref_w if is_horizontal else ref_h
+            return radius_spec.value * ref_length / 100
+        elif radius_spec.unit is None:
+            return radius_spec.value
+        else:
+            # TODO: handle other units
+            return radius_spec.value
+
+    return 0  # Fallback

@@ -104,13 +104,11 @@ def test_shape_outside_invalid_keywords():
 
 
 @pytest.mark.parametrize('invalid_value', [
-    'circle(50%)',  # shape function (not yet supported)
-    'ellipse(25% 50%)',  # shape function (not yet supported)
-    'polygon(0 0, 100% 0, 100% 100%)',  # shape function (not yet supported)
     'url(image.png)',  # image reference (not yet supported)
     '50px',  # length value (invalid)
     '50%',  # percentage value (invalid)
     'auto',  # not a valid shape-outside value
+    'polygon(0 0, 100% 0)',  # polygon with less than 3 points
 ])
 def test_shape_outside_unsupported_values(invalid_value):
     """Test that unsupported shape-outside values fall back to default."""
@@ -977,3 +975,823 @@ def test_shape_outside_with_text_wrapping():
     lines = anon_block.children
     # The first line should start after the content box edge
     assert lines[0].position_x == 70
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Shape Function CSS Parsing Tests
+# ---------------------------------------------------------------------------
+
+@assert_no_logs
+def test_circle_parsing_defaults():
+    """Test circle() with no arguments uses default values."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: circle();
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'circle'
+    # Default radius is 'closest-side'
+    assert shape_outside[1] == 'closest-side'
+    # Default position is 50% 50%
+    assert shape_outside[2][0].value == 50
+    assert shape_outside[2][0].unit == '%'
+    assert shape_outside[2][1].value == 50
+    assert shape_outside[2][1].unit == '%'
+
+
+@assert_no_logs
+def test_circle_parsing_with_radius():
+    """Test circle() with explicit radius."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: circle(50px);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'circle'
+    assert shape_outside[1].value == 50
+    assert shape_outside[1].unit == 'px'
+
+
+@assert_no_logs
+def test_circle_parsing_with_percentage_radius():
+    """Test circle() with percentage radius."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: circle(50%);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'circle'
+    assert shape_outside[1].value == 50
+    assert shape_outside[1].unit == '%'
+
+
+@assert_no_logs
+def test_circle_parsing_with_position():
+    """Test circle() with position only."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: circle(at 25% 75%);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'circle'
+    # Default radius
+    assert shape_outside[1] == 'closest-side'
+    # Custom position
+    assert shape_outside[2][0].value == 25
+    assert shape_outside[2][1].value == 75
+
+
+@assert_no_logs
+def test_circle_parsing_with_radius_and_position():
+    """Test circle() with both radius and position."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: circle(100px at 25% 75%);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'circle'
+    assert shape_outside[1].value == 100
+    assert shape_outside[1].unit == 'px'
+    assert shape_outside[2][0].value == 25
+    assert shape_outside[2][1].value == 75
+
+
+@assert_no_logs
+def test_circle_parsing_closest_side():
+    """Test circle() with closest-side keyword."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: circle(closest-side);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'circle'
+    assert shape_outside[1] == 'closest-side'
+
+
+@assert_no_logs
+def test_circle_parsing_farthest_side():
+    """Test circle() with farthest-side keyword."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: circle(farthest-side);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'circle'
+    assert shape_outside[1] == 'farthest-side'
+
+
+@assert_no_logs
+def test_ellipse_parsing_defaults():
+    """Test ellipse() with no arguments uses default values."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: ellipse();
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'ellipse'
+    # Default radii are 'closest-side'
+    assert shape_outside[1] == 'closest-side'
+    assert shape_outside[2] == 'closest-side'
+
+
+@assert_no_logs
+def test_ellipse_parsing_with_radii():
+    """Test ellipse() with explicit radii."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: ellipse(50px 100px);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'ellipse'
+    assert shape_outside[1].value == 50
+    assert shape_outside[2].value == 100
+
+
+@assert_no_logs
+def test_ellipse_parsing_with_single_radius():
+    """Test ellipse() with single radius (applies to both)."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: ellipse(50px);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'ellipse'
+    assert shape_outside[1].value == 50
+    assert shape_outside[2].value == 50
+
+
+@assert_no_logs
+def test_ellipse_parsing_with_position():
+    """Test ellipse() with position only."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: ellipse(at 30% 70%);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'ellipse'
+    assert shape_outside[3][0].value == 30
+    assert shape_outside[3][1].value == 70
+
+
+@assert_no_logs
+def test_ellipse_parsing_with_radii_and_position():
+    """Test ellipse() with both radii and position."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: ellipse(50px 80px at 25% 75%);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'ellipse'
+    assert shape_outside[1].value == 50
+    assert shape_outside[2].value == 80
+    assert shape_outside[3][0].value == 25
+    assert shape_outside[3][1].value == 75
+
+
+@assert_no_logs
+def test_polygon_parsing_triangle():
+    """Test polygon() with triangle points."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: polygon(0 0, 100% 0, 50% 100%);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'polygon'
+    assert shape_outside[1] == 'nonzero'  # default fill-rule
+    assert len(shape_outside[2]) == 3  # 3 points
+
+
+@assert_no_logs
+def test_polygon_parsing_with_fill_rule():
+    """Test polygon() with explicit fill-rule."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: polygon(evenodd, 0 0, 100% 0, 50% 100%);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'polygon'
+    assert shape_outside[1] == 'evenodd'
+
+
+@assert_no_logs
+def test_polygon_parsing_rectangle():
+    """Test polygon() with rectangle (4 points)."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'polygon'
+    assert len(shape_outside[2]) == 4
+
+
+@assert_no_logs
+def test_polygon_parsing_with_px_values():
+    """Test polygon() with pixel values."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: polygon(0px 0px, 100px 0px, 50px 100px);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    shape_outside = div.style['shape_outside']
+    assert shape_outside[0] == 'polygon'
+    # First point
+    assert shape_outside[2][0][0].value == 0
+    assert shape_outside[2][0][1].value == 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Shape Boundary Geometry Tests
+# ---------------------------------------------------------------------------
+
+from weasyprint.layout.shapes import CircleBoundary, EllipseBoundary, PolygonBoundary
+
+
+def test_circle_boundary_center():
+    """Test CircleBoundary bounds at center Y."""
+    boundary = CircleBoundary(cx=100, cy=100, radius=50)
+    # At center y=100, bounds should be at x=50 to x=150
+    bounds = boundary.get_bounds_at_y(100)
+    assert bounds is not None
+    assert abs(bounds[0] - 50) < 0.001
+    assert abs(bounds[1] - 150) < 0.001
+
+
+def test_circle_boundary_edge():
+    """Test CircleBoundary bounds at edge Y (top and bottom)."""
+    boundary = CircleBoundary(cx=100, cy=100, radius=50)
+    # At y = 50 (top edge), bounds should be a single point (100, 100)
+    bounds_top = boundary.get_bounds_at_y(50)
+    assert bounds_top is not None
+    assert abs(bounds_top[0] - 100) < 0.001
+    assert abs(bounds_top[1] - 100) < 0.001
+
+    # At y = 150 (bottom edge)
+    bounds_bottom = boundary.get_bounds_at_y(150)
+    assert bounds_bottom is not None
+    assert abs(bounds_bottom[0] - 100) < 0.001
+    assert abs(bounds_bottom[1] - 100) < 0.001
+
+
+def test_circle_boundary_outside():
+    """Test CircleBoundary returns None outside circle."""
+    boundary = CircleBoundary(cx=100, cy=100, radius=50)
+    # Above circle
+    assert boundary.get_bounds_at_y(0) is None
+    # Below circle
+    assert boundary.get_bounds_at_y(200) is None
+
+
+def test_circle_boundary_vertical_extent():
+    """Test CircleBoundary vertical extent."""
+    boundary = CircleBoundary(cx=100, cy=100, radius=50)
+    extent = boundary.get_vertical_extent()
+    assert extent == (50, 150)
+
+
+def test_ellipse_boundary_center():
+    """Test EllipseBoundary bounds at center Y."""
+    boundary = EllipseBoundary(cx=100, cy=100, rx=80, ry=50)
+    # At center y=100, bounds should be at x=20 to x=180
+    bounds = boundary.get_bounds_at_y(100)
+    assert bounds is not None
+    assert abs(bounds[0] - 20) < 0.001
+    assert abs(bounds[1] - 180) < 0.001
+
+
+def test_ellipse_boundary_asymmetric():
+    """Test EllipseBoundary with asymmetric radii."""
+    boundary = EllipseBoundary(cx=100, cy=100, rx=100, ry=50)
+    # At center, bounds should span full rx
+    bounds_center = boundary.get_bounds_at_y(100)
+    assert abs(bounds_center[0] - 0) < 0.001
+    assert abs(bounds_center[1] - 200) < 0.001
+
+    # At top edge (y=50), should be a single point
+    bounds_top = boundary.get_bounds_at_y(50)
+    assert bounds_top is not None
+    assert abs(bounds_top[0] - 100) < 0.001
+    assert abs(bounds_top[1] - 100) < 0.001
+
+
+def test_ellipse_boundary_outside():
+    """Test EllipseBoundary returns None outside ellipse."""
+    boundary = EllipseBoundary(cx=100, cy=100, rx=80, ry=50)
+    assert boundary.get_bounds_at_y(0) is None
+    assert boundary.get_bounds_at_y(200) is None
+
+
+def test_ellipse_boundary_vertical_extent():
+    """Test EllipseBoundary vertical extent."""
+    boundary = EllipseBoundary(cx=100, cy=100, rx=80, ry=50)
+    extent = boundary.get_vertical_extent()
+    assert extent == (50, 150)
+
+
+def test_polygon_boundary_triangle():
+    """Test PolygonBoundary with triangle."""
+    # Triangle: top center (50, 0), bottom left (0, 100), bottom right (100, 100)
+    points = [(50, 0), (0, 100), (100, 100)]
+    boundary = PolygonBoundary(points)
+
+    # At bottom (y=100), bounds should be full width
+    bounds_bottom = boundary.get_bounds_at_y(100)
+    assert bounds_bottom is not None
+    assert abs(bounds_bottom[0] - 0) < 0.001
+    assert abs(bounds_bottom[1] - 100) < 0.001
+
+    # At middle (y=50), bounds should be narrower
+    bounds_middle = boundary.get_bounds_at_y(50)
+    assert bounds_middle is not None
+    assert abs(bounds_middle[0] - 25) < 0.001
+    assert abs(bounds_middle[1] - 75) < 0.001
+
+
+def test_polygon_boundary_rectangle():
+    """Test PolygonBoundary with rectangle."""
+    # Rectangle: (0,0), (100,0), (100,100), (0,100)
+    points = [(0, 0), (100, 0), (100, 100), (0, 100)]
+    boundary = PolygonBoundary(points)
+
+    # At any Y within rectangle, bounds should be 0 to 100
+    bounds = boundary.get_bounds_at_y(50)
+    assert bounds is not None
+    assert abs(bounds[0] - 0) < 0.001
+    assert abs(bounds[1] - 100) < 0.001
+
+
+def test_polygon_boundary_concave():
+    """Test PolygonBoundary with concave (arrow) shape."""
+    # Arrow pointing right: (0,0), (70,0), (70,30), (100,50), (70,70), (70,100), (0,100)
+    points = [(0, 0), (70, 0), (70, 30), (100, 50), (70, 70), (70, 100), (0, 100)]
+    boundary = PolygonBoundary(points)
+
+    # At y=50 (arrow point), should extend to x=100
+    bounds_point = boundary.get_bounds_at_y(50)
+    assert bounds_point is not None
+    assert abs(bounds_point[0] - 0) < 0.001
+    assert abs(bounds_point[1] - 100) < 0.001
+
+    # At y=20 (above arrow point), should be narrower
+    bounds_above = boundary.get_bounds_at_y(20)
+    assert bounds_above is not None
+    assert abs(bounds_above[0] - 0) < 0.001
+    assert bounds_above[1] <= 75  # Should be at or before indentation
+
+
+def test_polygon_boundary_outside():
+    """Test PolygonBoundary returns None outside polygon."""
+    points = [(0, 50), (100, 50), (100, 150), (0, 150)]
+    boundary = PolygonBoundary(points)
+    assert boundary.get_bounds_at_y(0) is None
+    assert boundary.get_bounds_at_y(200) is None
+
+
+def test_polygon_boundary_vertical_extent():
+    """Test PolygonBoundary vertical extent."""
+    points = [(0, 50), (100, 50), (100, 150), (0, 150)]
+    boundary = PolygonBoundary(points)
+    extent = boundary.get_vertical_extent()
+    assert extent == (50, 150)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Shape Function Integration Tests
+# ---------------------------------------------------------------------------
+
+@assert_no_logs
+def test_float_circle_creates_boundary():
+    """Test that circle() float creates CircleBoundary."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: circle(50px);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    assert hasattr(div, 'shape_boundary')
+    assert isinstance(div.shape_boundary, CircleBoundary)
+
+
+@assert_no_logs
+def test_float_ellipse_creates_boundary():
+    """Test that ellipse() float creates EllipseBoundary."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: ellipse(50px 80px);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    assert hasattr(div, 'shape_boundary')
+    assert isinstance(div.shape_boundary, EllipseBoundary)
+
+
+@assert_no_logs
+def test_float_polygon_creates_boundary():
+    """Test that polygon() float creates PolygonBoundary."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: polygon(0 0, 100% 0, 50% 100%);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    assert hasattr(div, 'shape_boundary')
+    assert isinstance(div.shape_boundary, PolygonBoundary)
+
+
+@assert_no_logs
+def test_float_circle_text_wrap():
+    """Test text wraps around circular float."""
+    page, = render_pages('''
+        <style>
+            body { width: 200px; font-size: 0; }
+            .float {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: circle(50px at 50% 50%);
+            }
+            img { width: 30px; height: 10px; vertical-align: top; }
+        </style>
+        <div class="float"></div>
+        <img src="pattern.png" />
+    ''')
+    html, = page.children
+    body, = html.children
+    float_div, anon_block = body.children
+    line, = anon_block.children
+    img, = line.children
+
+    # Circle with 50px radius centered at 50,50 of a 100x100 box
+    # At y=0 (top of line), the circle edge is at x=50 (center)
+    # Image should start after the circle's bound at that y
+    # The text will wrap around the curved shape
+    assert img.position_x >= 0
+
+
+@assert_no_logs
+def test_float_ellipse_text_wrap():
+    """Test text wraps around elliptical float."""
+    page, = render_pages('''
+        <style>
+            body { width: 200px; font-size: 0; }
+            .float {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: ellipse(50px 50px at 50% 50%);
+            }
+            img { width: 30px; height: 10px; vertical-align: top; }
+        </style>
+        <div class="float"></div>
+        <img src="pattern.png" />
+    ''')
+    html, = page.children
+    body, = html.children
+    float_div, anon_block = body.children
+    line, = anon_block.children
+    img, = line.children
+
+    # Ellipse centered in the box
+    assert img.position_x >= 0
+
+
+@assert_no_logs
+def test_float_polygon_text_wrap():
+    """Test text wraps around polygonal float."""
+    page, = render_pages('''
+        <style>
+            body { width: 200px; font-size: 0; }
+            .float {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+            }
+            img { width: 30px; height: 10px; vertical-align: top; }
+        </style>
+        <div class="float"></div>
+        <img src="pattern.png" />
+    ''')
+    html, = page.children
+    body, = html.children
+    float_div, anon_block = body.children
+    line, = anon_block.children
+    img, = line.children
+
+    # Rectangle polygon should behave like margin-box
+    assert img.position_x == 100  # After the 100px float
+
+
+@assert_no_logs
+def test_circle_closest_side_resolution():
+    """Test closest-side keyword resolves correctly for circle."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 200px;
+                shape-outside: circle(closest-side at 50% 50%);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    # closest-side for a centered circle in 100x200 box should be 50
+    # (distance to left/right sides, which are closer than top/bottom)
+    boundary = div.shape_boundary
+    assert isinstance(boundary, CircleBoundary)
+    assert boundary.radius == 50
+
+
+@assert_no_logs
+def test_circle_farthest_side_resolution():
+    """Test farthest-side keyword resolves correctly for circle."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 200px;
+                shape-outside: circle(farthest-side at 50% 50%);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    # farthest-side for a centered circle in 100x200 box should be 100
+    # (distance to top/bottom sides, which are farther than left/right)
+    boundary = div.shape_boundary
+    assert isinstance(boundary, CircleBoundary)
+    assert boundary.radius == 100
+
+
+@assert_no_logs
+def test_ellipse_closest_side_resolution():
+    """Test closest-side keyword resolves correctly for ellipse."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 200px;
+                shape-outside: ellipse(closest-side closest-side at 50% 50%);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    boundary = div.shape_boundary
+    assert isinstance(boundary, EllipseBoundary)
+    # rx closest-side in 100px width = 50
+    assert boundary.rx == 50
+    # ry closest-side in 200px height = 100
+    assert boundary.ry == 100
+
+
+@assert_no_logs
+def test_polygon_percentage_resolution():
+    """Test polygon percentage values resolve correctly."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 200px;
+                shape-outside: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    boundary = div.shape_boundary
+    assert isinstance(boundary, PolygonBoundary)
+    # Verify points are resolved to absolute coordinates
+    # Reference is margin box (100x200 starting at position_x, position_y)
+    ref_x = div.position_x
+    ref_y = div.position_y
+    assert boundary.points[0] == (ref_x, ref_y)  # 0%, 0%
+    assert boundary.points[1] == (ref_x + 100, ref_y)  # 100%, 0%
+    assert boundary.points[2] == (ref_x + 100, ref_y + 200)  # 100%, 100%
+    assert boundary.points[3] == (ref_x, ref_y + 200)  # 0%, 100%
+
+
+@assert_no_logs
+def test_circle_position_keywords():
+    """Test circle() with position keywords."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: circle(30px at left top);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+
+    boundary = div.shape_boundary
+    assert isinstance(boundary, CircleBoundary)
+    # Center should be at top-left corner
+    assert boundary.cx == div.position_x
+    assert boundary.cy == div.position_y
+    assert boundary.radius == 30

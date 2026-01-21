@@ -14,10 +14,11 @@ from ..functions import Function, check_var
 from ..properties import KNOWN_PROPERTIES, ZERO_PIXELS, Dimension
 
 from ..tokens import (  # isort:skip
-    InvalidValues, Pending, comma_separated_list, get_angle, get_content_list,
-    get_content_list_token, get_custom_ident, get_image, get_keyword, get_length,
-    get_number, get_percentage, get_resolution, get_single_keyword, get_url,
-    parse_2d_position, parse_position, remove_whitespace, single_keyword, single_token)
+    FIFTY_PERCENT, InvalidValues, Pending, comma_separated_list, get_angle,
+    get_content_list, get_content_list_token, get_custom_ident, get_image,
+    get_keyword, get_length, get_number, get_percentage, get_resolution,
+    get_single_keyword, get_url, parse_2d_position, parse_position,
+    remove_whitespace, single_keyword, single_token)
 
 PREFIX = '-weasy-'
 PROPRIETARY = set()
@@ -520,11 +521,10 @@ def box_sizing(keyword):
 
 
 @property()
-@single_keyword
-def shape_outside(keyword):
+def shape_outside(tokens):
     """``shape-outside`` property validation.
 
-    Validates the shape-outside property with box keyword values.
+    Validates the shape-outside property with box keyword values and shape functions.
     This property specifies the shape around which inline content wraps
     when flowing around a floated element.
 
@@ -534,11 +534,279 @@ def shape_outside(keyword):
     - border-box: Uses the border box as the reference shape.
     - padding-box: Uses the padding box as the reference shape.
     - content-box: Uses the content box as the reference shape.
+    - circle(): Defines a circular shape.
+    - ellipse(): Defines an elliptical shape.
+    - polygon(): Defines a polygonal shape.
 
     See https://www.w3.org/TR/css-shapes-1/#shape-outside-property
     """
-    return keyword in ('none', 'margin-box', 'border-box',
-                       'padding-box', 'content-box')
+    if len(tokens) == 1:
+        token = tokens[0]
+        if token.type == 'ident':
+            keyword = token.lower_value
+            if keyword in ('none', 'margin-box', 'border-box',
+                           'padding-box', 'content-box'):
+                return keyword
+        # Handle shape functions
+        if token.type == 'function':
+            return _parse_shape_function(token)
+    return None
+
+
+def _parse_shape_function(token):
+    """Parse a shape function (circle, ellipse, polygon)."""
+    name = token.lower_name
+
+    if name == 'circle':
+        return _parse_circle(token)
+    elif name == 'ellipse':
+        return _parse_ellipse(token)
+    elif name == 'polygon':
+        return _parse_polygon(token)
+
+    return None
+
+
+def _parse_circle(token):
+    """Parse circle() shape function.
+
+    Syntax: circle(radius? at position?)
+    - radius: length, percentage, or 'closest-side' | 'farthest-side'
+    - position: 2D position (defaults to center)
+
+    Returns: ('circle', radius, (cx, cy)) or None if invalid
+    """
+    arguments = remove_whitespace(token.arguments)
+
+    # Default values
+    radius = 'closest-side'
+    position = (FIFTY_PERCENT, FIFTY_PERCENT)
+
+    if not arguments:
+        # circle() with no arguments - use defaults
+        return ('circle', radius, position)
+
+    # Find 'at' keyword to split radius from position
+    at_index = None
+    for i, arg in enumerate(arguments):
+        if arg.type == 'ident' and arg.lower_value == 'at':
+            at_index = i
+            break
+
+    if at_index is not None:
+        # Parse radius (if any before 'at')
+        if at_index > 0:
+            radius_tokens = arguments[:at_index]
+            radius = _parse_shape_radius(radius_tokens)
+            if radius is None:
+                return None
+
+        # Parse position (after 'at')
+        position_tokens = arguments[at_index + 1:]
+        if not position_tokens:
+            return None
+        position = _parse_shape_position(position_tokens)
+        if position is None:
+            return None
+    else:
+        # No 'at', so all tokens are for radius
+        radius = _parse_shape_radius(arguments)
+        if radius is None:
+            return None
+
+    return ('circle', radius, position)
+
+
+def _parse_ellipse(token):
+    """Parse ellipse() shape function.
+
+    Syntax: ellipse(rx ry? at position?)
+    - rx, ry: length, percentage, or 'closest-side' | 'farthest-side'
+    - position: 2D position (defaults to center)
+
+    Returns: ('ellipse', rx, ry, (cx, cy)) or None if invalid
+    """
+    arguments = remove_whitespace(token.arguments)
+
+    # Default values
+    rx = 'closest-side'
+    ry = 'closest-side'
+    position = (FIFTY_PERCENT, FIFTY_PERCENT)
+
+    if not arguments:
+        # ellipse() with no arguments - use defaults
+        return ('ellipse', rx, ry, position)
+
+    # Find 'at' keyword to split radii from position
+    at_index = None
+    for i, arg in enumerate(arguments):
+        if arg.type == 'ident' and arg.lower_value == 'at':
+            at_index = i
+            break
+
+    if at_index is not None:
+        # Parse radii (if any before 'at')
+        if at_index > 0:
+            radii_tokens = arguments[:at_index]
+            radii = _parse_ellipse_radii(radii_tokens)
+            if radii is None:
+                return None
+            rx, ry = radii
+
+        # Parse position (after 'at')
+        position_tokens = arguments[at_index + 1:]
+        if not position_tokens:
+            return None
+        position = _parse_shape_position(position_tokens)
+        if position is None:
+            return None
+    else:
+        # No 'at', so all tokens are for radii
+        radii = _parse_ellipse_radii(arguments)
+        if radii is None:
+            return None
+        rx, ry = radii
+
+    return ('ellipse', rx, ry, position)
+
+
+def _parse_polygon(token):
+    """Parse polygon() shape function.
+
+    Syntax: polygon(fill-rule?, point, point, ...)
+    - fill-rule: 'nonzero' | 'evenodd' (optional, defaults to 'nonzero')
+    - point: x y pairs (comma-separated)
+
+    Returns: ('polygon', fill_rule, ((x1,y1), (x2,y2), ...)) or None if invalid
+    """
+    from ..functions import Function
+    func = Function(token)
+    # Split by comma but keep multi-token parts (for x y pairs)
+    parts = func.split_comma(single_tokens=False)
+
+    if parts is None or len(parts) < 3:
+        # Need at least 3 points for a polygon
+        return None
+
+    fill_rule = 'nonzero'
+    points = []
+    first_part = parts[0]
+
+    # Check if first part is a fill-rule keyword
+    if len(first_part) == 1 and first_part[0].type == 'ident':
+        keyword = first_part[0].lower_value
+        if keyword in ('nonzero', 'evenodd'):
+            fill_rule = keyword
+            parts = parts[1:]
+        elif keyword not in ('nonzero', 'evenodd'):
+            # First part might be a single-token x value (invalid for point)
+            # Try to parse as point
+            pass
+
+    # Need at least 3 points
+    if len(parts) < 3:
+        return None
+
+    for part in parts:
+        point = _parse_polygon_point(part)
+        if point is None:
+            return None
+        points.append(point)
+
+    return ('polygon', fill_rule, tuple(points))
+
+
+def _parse_shape_radius(tokens):
+    """Parse a shape radius value (for circle).
+
+    Returns: 'closest-side', 'farthest-side', or Dimension, or None if invalid
+    """
+    if len(tokens) != 1:
+        return None
+
+    token = tokens[0]
+
+    # Check for keywords
+    if token.type == 'ident':
+        keyword = token.lower_value
+        if keyword in ('closest-side', 'farthest-side'):
+            return keyword
+        return None
+
+    # Check for length or percentage
+    length = get_length(token, negative=False, percentage=True)
+    if length:
+        return length
+
+    return None
+
+
+def _parse_ellipse_radii(tokens):
+    """Parse ellipse radii (rx and ry).
+
+    Returns: (rx, ry) tuple or None if invalid
+    """
+    if len(tokens) == 1:
+        # Single value - applies to both rx and ry
+        radius = _parse_shape_radius(tokens)
+        if radius is None:
+            return None
+        return (radius, radius)
+    elif len(tokens) == 2:
+        # Two values - rx and ry
+        rx = _parse_shape_radius([tokens[0]])
+        ry = _parse_shape_radius([tokens[1]])
+        if rx is None or ry is None:
+            return None
+        return (rx, ry)
+
+    return None
+
+
+def _parse_shape_position(tokens):
+    """Parse a position value for shape functions.
+
+    Returns: (x, y) tuple of Dimension values or None if invalid
+    """
+    # Use the existing parse_2d_position function
+    result = parse_2d_position(tokens)
+    if result:
+        return result
+
+    # Also try with position keywords
+    if len(tokens) == 1:
+        token = tokens[0]
+        if token.type == 'ident':
+            keyword = token.lower_value
+            if keyword == 'center':
+                return (FIFTY_PERCENT, FIFTY_PERCENT)
+            elif keyword == 'left':
+                return (Dimension(0, '%'), FIFTY_PERCENT)
+            elif keyword == 'right':
+                return (Dimension(100, '%'), FIFTY_PERCENT)
+            elif keyword == 'top':
+                return (FIFTY_PERCENT, Dimension(0, '%'))
+            elif keyword == 'bottom':
+                return (FIFTY_PERCENT, Dimension(100, '%'))
+
+    return None
+
+
+def _parse_polygon_point(tokens):
+    """Parse a polygon point (x y pair).
+
+    Returns: (x, y) tuple of Dimension values or None if invalid
+    """
+    if len(tokens) != 2:
+        return None
+
+    x = get_length(tokens[0], percentage=True)
+    y = get_length(tokens[1], percentage=True)
+
+    if x is None or y is None:
+        return None
+
+    return (x, y)
 
 
 @property()
