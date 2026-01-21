@@ -202,19 +202,32 @@ def avoid_collisions(context, box, containing_block, outer=True):
         left_bounds = []
         right_bounds = []
         for shape in colliding_shapes:
-            # Use shape boundary to get exclusion bounds at this Y position
-            # Fall back to get_shape_box_bounds if shape_boundary not set
+            # Use shape boundary to get exclusion bounds
+            # For curved shapes, we need to check bounds at multiple Y positions
+            # within the box's vertical extent to find the most restrictive bounds
             if hasattr(shape, 'shape_boundary'):
-                bounds = shape.shape_boundary.get_bounds_at_y(position_y)
-                if bounds is None:
-                    # When y is outside the shape's vertical extent but inside
-                    # the float's margin box, fall back to margin box bounds.
-                    # This matches CSS Shapes spec behavior.
+                # Sample bounds at top, middle, and bottom of the box
+                # Use the most restrictive (widest shape) for proper text wrapping
+                shape_left = None
+                shape_right = None
+                sample_ys = [position_y, position_y + box_height / 2,
+                             position_y + box_height]
+                for sample_y in sample_ys:
+                    bounds = shape.shape_boundary.get_bounds_at_y(sample_y)
+                    if bounds is not None:
+                        bl, br = bounds
+                        # For left floats, use max right (widest shape extent)
+                        # For right floats, use min left (widest shape extent)
+                        if shape_left is None:
+                            shape_left, shape_right = bl, br
+                        else:
+                            shape_left = min(shape_left, bl)
+                            shape_right = max(shape_right, br)
+                if shape_left is None:
+                    # All samples outside shape extent, fall back to margin box
                     shape_x, shape_width = get_shape_box_bounds(shape)
                     shape_left = shape_x
                     shape_right = shape_x + shape_width
-                else:
-                    shape_left, shape_right = bounds
             else:
                 shape_x, shape_width = get_shape_box_bounds(shape)
                 shape_left = shape_x

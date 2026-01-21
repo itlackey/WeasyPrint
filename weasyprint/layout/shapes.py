@@ -8,6 +8,8 @@ for querying shape bounds at specific Y coordinates.
 import math
 from abc import ABC, abstractmethod
 
+from ..css.units import LENGTHS_TO_PIXELS
+
 
 class ShapeBoundary(ABC):
     """Abstract base class for shape-outside boundaries.
@@ -431,14 +433,24 @@ def _create_base_boundary(box, shape_outside, ref_box_type='margin-box'):
     """
     # String keywords
     if isinstance(shape_outside, str):
+        box_type = None
         if shape_outside in ('none', 'margin-box'):
-            return BoxBoundary(box, 'margin-box')
+            box_type = 'margin-box'
         elif shape_outside == 'border-box':
-            return BoxBoundary(box, 'border-box')
+            box_type = 'border-box'
         elif shape_outside == 'padding-box':
-            return BoxBoundary(box, 'padding-box')
+            box_type = 'padding-box'
         elif shape_outside == 'content-box':
-            return BoxBoundary(box, 'content-box')
+            box_type = 'content-box'
+
+        if box_type:
+            # Check if box has border-radius - if so, create InsetBoundary with corners
+            border_radii = _get_border_radii(box)
+            if border_radii and any(r > 0 for r in border_radii):
+                # Create inset boundary with 0 inset and the border-radius values
+                ref_x, ref_y, ref_w, ref_h = get_reference_box(box, box_type)
+                return InsetBoundary(ref_x, ref_y, ref_x + ref_w, ref_y + ref_h, border_radii)
+            return BoxBoundary(box, box_type)
 
     # Shape functions (tuples)
     elif isinstance(shape_outside, tuple):
@@ -467,6 +479,66 @@ def _create_base_boundary(box, shape_outside, ref_box_type='margin-box'):
 # ---------------------------------------------------------------------------
 # Parameter Resolution Functions
 # ---------------------------------------------------------------------------
+
+def _get_border_radii(box):
+    """Extract border-radius values from a box.
+
+    Returns tuple of (top-left, top-right, bottom-right, bottom-left) radii
+    in pixels, or None if no border-radius.
+    """
+    # Border radius values are in box.style as computed values (tuples of Dimensions)
+    # They need to be resolved to pixels similar to resolve_radii_percentages
+    style = box.style
+    border_width = box.border_width()
+    border_height = box.border_height()
+
+    def resolve_radius(computed):
+        """Resolve a computed radius tuple (rx, ry) to pixel values."""
+        if computed is None or computed == (0, 0):
+            return (0, 0)
+        rx, ry = computed
+        # Check for zero values
+        if hasattr(rx, 'value') and hasattr(ry, 'value'):
+            if rx.value == 0 or ry.value == 0:
+                return (0, 0)
+        # Resolve percentages or extract pixel values
+        if hasattr(rx, 'unit'):
+            if rx.unit == '%':
+                rx_px = border_width * rx.value / 100
+            elif rx.unit and rx.unit.lower() == 'px':
+                rx_px = rx.value
+            elif rx.unit in LENGTHS_TO_PIXELS:
+                rx_px = rx.value * LENGTHS_TO_PIXELS[rx.unit]
+            else:
+                rx_px = rx.value if rx.value else 0
+        else:
+            rx_px = float(rx) if rx else 0
+        if hasattr(ry, 'unit'):
+            if ry.unit == '%':
+                ry_px = border_height * ry.value / 100
+            elif ry.unit and ry.unit.lower() == 'px':
+                ry_px = ry.value
+            elif ry.unit in LENGTHS_TO_PIXELS:
+                ry_px = ry.value * LENGTHS_TO_PIXELS[ry.unit]
+            else:
+                ry_px = ry.value if ry.value else 0
+        else:
+            ry_px = float(ry) if ry else 0
+        return (rx_px, ry_px)
+
+    tl = resolve_radius(style['border_top_left_radius'])
+    tr = resolve_radius(style['border_top_right_radius'])
+    br = resolve_radius(style['border_bottom_right_radius'])
+    bl = resolve_radius(style['border_bottom_left_radius'])
+
+    # For shape-outside, use the horizontal radius (first value)
+    # since that's what affects horizontal text wrapping
+    radii = (tl[0], tr[0], br[0], bl[0])
+
+    if all(r == 0 for r in radii):
+        return None
+    return radii
+
 
 def get_reference_box(box, ref_box_type='margin-box'):
     """Get the reference box coordinates for a given box type.
@@ -626,14 +698,14 @@ def resolve_inset_boundary(shape_value, box, ref_box_type='margin-box'):
 
 
 def resolve_position_value(value, reference_length):
-    """Resolve a position value (length or percentage) to absolute.
+    """Resolve a position value (length or percentage) to absolute pixels.
 
     Args:
         value: A Dimension with unit, or a numeric value
         reference_length: The reference length for percentage calculations
 
     Returns:
-        Absolute value (float)
+        Absolute value in pixels (float)
     """
     if hasattr(value, 'unit'):
         if value.unit == '%':
@@ -643,9 +715,11 @@ def resolve_position_value(value, reference_length):
         elif value.unit is None:
             # Unitless value (e.g., 0)
             return value.value
+        elif value.unit in LENGTHS_TO_PIXELS:
+            # Convert absolute length units (in, cm, mm, pt, pc, q) to pixels
+            return value.value * LENGTHS_TO_PIXELS[value.unit]
         else:
-            # TODO: handle other units (would need computed_values)
-            # For now, assume px
+            # For unknown units, treat as pixels (best effort)
             return value.value
     return float(value)
 
@@ -688,8 +762,11 @@ def resolve_shape_radius(radius_spec, ref_w, ref_h, cx, cy, ref_x, ref_y):
             return radius_spec.value * ref_length / 100
         elif radius_spec.unit is None:
             return radius_spec.value
+        elif radius_spec.unit in LENGTHS_TO_PIXELS:
+            # Convert absolute length units (in, cm, mm, pt, pc, q) to pixels
+            return radius_spec.value * LENGTHS_TO_PIXELS[radius_spec.unit]
         else:
-            # TODO: handle other units
+            # For unknown units, treat as pixels (best effort)
             return radius_spec.value
 
     return 0  # Fallback
@@ -730,8 +807,11 @@ def resolve_ellipse_radius(radius_spec, ref_w, ref_h, cx, cy, ref_x, ref_y,
             return radius_spec.value * ref_length / 100
         elif radius_spec.unit is None:
             return radius_spec.value
+        elif radius_spec.unit in LENGTHS_TO_PIXELS:
+            # Convert absolute length units (in, cm, mm, pt, pc, q) to pixels
+            return radius_spec.value * LENGTHS_TO_PIXELS[radius_spec.unit]
         else:
-            # TODO: handle other units
+            # For unknown units, treat as pixels (best effort)
             return radius_spec.value
 
     return 0  # Fallback
