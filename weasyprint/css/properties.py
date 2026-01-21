@@ -34,6 +34,7 @@ INITIAL_VALUES = {
     'right': 'auto',
     'shape_outside': 'none',
     'shape_margin': ZERO_PIXELS,
+    'shape_image_threshold': 0.0,
     'table_layout': 'auto',
     'top': 'auto',
     'unicode_bidi': 'normal',

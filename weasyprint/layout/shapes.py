@@ -390,6 +390,143 @@ class MarginedBoundary(ShapeBoundary):
         return (inner_extent[0] - self.margin, inner_extent[1] + self.margin)
 
 
+class ImageBoundary(ShapeBoundary):
+    """Image-based boundary using alpha channel extraction.
+
+    This class extracts the shape from an image's alpha channel.
+    Pixels with alpha values greater than the threshold are considered
+    inside the shape.
+    """
+
+    def __init__(self, image_data, threshold, ref_x, ref_y, ref_w, ref_h):
+        """Initialize image boundary.
+
+        Args:
+            image_data: PIL Image or image bytes
+            threshold: Alpha threshold (0.0-1.0) for shape extraction
+            ref_x, ref_y: Reference box position (absolute)
+            ref_w, ref_h: Reference box dimensions
+        """
+        self.ref_x = ref_x
+        self.ref_y = ref_y
+        self.ref_w = ref_w
+        self.ref_h = ref_h
+        self.threshold = threshold
+        self.alpha_data = None
+        self.img_width = 0
+        self.img_height = 0
+
+        # Extract alpha channel from image
+        self._extract_alpha(image_data)
+
+        # Cache for scanline bounds
+        self._bounds_cache = {}
+
+    def _extract_alpha(self, image_data):
+        """Extract alpha channel from image data."""
+        try:
+            from PIL import Image
+            import io
+
+            # Handle different image data types
+            if isinstance(image_data, Image.Image):
+                img = image_data
+            elif isinstance(image_data, bytes):
+                img = Image.open(io.BytesIO(image_data))
+            else:
+                # Fallback - no valid image
+                return
+
+            # Convert to RGBA if needed
+            if img.mode != 'RGBA':
+                img = img.convert('RGBA')
+
+            self.img_width = img.width
+            self.img_height = img.height
+
+            # Extract alpha channel as a 2D array
+            # We'll store as a list of rows for efficient access
+            self.alpha_data = []
+            for y in range(img.height):
+                row = []
+                for x in range(img.width):
+                    # Get alpha value (0-255), normalize to 0-1
+                    pixel = img.getpixel((x, y))
+                    alpha = pixel[3] / 255.0 if len(pixel) > 3 else 1.0
+                    row.append(alpha)
+                self.alpha_data.append(row)
+
+        except Exception:
+            # If image loading fails, alpha_data remains None
+            pass
+
+    def get_bounds_at_y(self, y):
+        """Get horizontal bounds at Y by scanning alpha channel."""
+        if self.alpha_data is None or self.img_height == 0:
+            return None
+
+        # Check cache
+        if y in self._bounds_cache:
+            return self._bounds_cache[y]
+
+        # Map y coordinate to image row
+        rel_y = y - self.ref_y
+        if rel_y < 0 or rel_y >= self.ref_h:
+            return None
+
+        # Scale to image coordinates
+        img_y = int((rel_y / self.ref_h) * self.img_height)
+        img_y = max(0, min(self.img_height - 1, img_y))
+
+        row = self.alpha_data[img_y]
+
+        # Scan for left and right bounds
+        left_bound = None
+        right_bound = None
+
+        for x, alpha in enumerate(row):
+            if alpha > self.threshold:
+                # Map image x to reference box coordinates
+                ref_x = self.ref_x + (x / self.img_width) * self.ref_w
+                if left_bound is None:
+                    left_bound = ref_x
+                right_bound = ref_x
+
+        if left_bound is None:
+            # No pixels above threshold at this y
+            result = None
+        else:
+            # Extend right bound to include the full pixel width
+            pixel_width = self.ref_w / self.img_width
+            result = (left_bound, right_bound + pixel_width)
+
+        self._bounds_cache[y] = result
+        return result
+
+    def get_vertical_extent(self):
+        """Get the vertical extent of the shape."""
+        if self.alpha_data is None:
+            return (self.ref_y, self.ref_y + self.ref_h)
+
+        # Find first and last rows with pixels above threshold
+        min_y = None
+        max_y = None
+
+        for img_y, row in enumerate(self.alpha_data):
+            if any(alpha > self.threshold for alpha in row):
+                ref_y = self.ref_y + (img_y / self.img_height) * self.ref_h
+                if min_y is None:
+                    min_y = ref_y
+                max_y = ref_y
+
+        if min_y is None:
+            return (self.ref_y, self.ref_y + self.ref_h)
+
+        # Extend max_y to include full pixel height
+        pixel_height = self.ref_h / self.img_height
+        return (min_y, max_y + pixel_height)
+
+
 def create_shape_boundary(box):
     """Create a shape boundary for a floated box.
 
@@ -472,8 +609,65 @@ def _create_base_boundary(box, shape_outside, ref_box_type='margin-box'):
         elif shape_type == 'inset':
             return resolve_inset_boundary(shape_outside, box, ref_box_type)
 
+        elif shape_type == 'image':
+            # Image-based shape: ('image', url_info, ref_box_type)
+            url_info = shape_outside[1]
+            image_ref_box = shape_outside[2] if len(shape_outside) > 2 else 'margin-box'
+            return _create_image_boundary(box, url_info, image_ref_box)
+
     # Fallback
     return BoxBoundary(box, 'margin-box')
+
+
+def _create_image_boundary(box, url_info, ref_box_type):
+    """Create an ImageBoundary from a URL.
+
+    Args:
+        box: The float box
+        url_info: URL info tuple from CSS parsing
+        ref_box_type: Reference box type for the image
+
+    Returns:
+        ImageBoundary or BoxBoundary fallback
+    """
+    # Get reference box dimensions
+    ref_x, ref_y, ref_w, ref_h = get_reference_box(box, ref_box_type)
+
+    # Get threshold from style
+    threshold = box.style.get('shape_image_threshold', 0.0)
+    if threshold is None:
+        threshold = 0.0
+
+    # Try to load the image
+    try:
+        # URL info can be ('external', url) or ('internal', data)
+        if isinstance(url_info, tuple):
+            url_type, url_data = url_info
+            if url_type == 'external':
+                # Load external image
+                import urllib.request
+                with urllib.request.urlopen(url_data) as response:
+                    image_data = response.read()
+                return ImageBoundary(image_data, threshold, ref_x, ref_y, ref_w, ref_h)
+            elif url_type == 'internal':
+                # Internal data (already loaded)
+                return ImageBoundary(url_data, threshold, ref_x, ref_y, ref_w, ref_h)
+        elif isinstance(url_info, str):
+            # Direct file path or URL
+            if url_info.startswith(('http://', 'https://')):
+                import urllib.request
+                with urllib.request.urlopen(url_info) as response:
+                    image_data = response.read()
+            else:
+                # Local file
+                with open(url_info, 'rb') as f:
+                    image_data = f.read()
+            return ImageBoundary(image_data, threshold, ref_x, ref_y, ref_w, ref_h)
+    except Exception:
+        # If image loading fails, fall back to box boundary
+        pass
+
+    return BoxBoundary(box, ref_box_type)
 
 
 # ---------------------------------------------------------------------------

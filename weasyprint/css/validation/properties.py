@@ -520,11 +520,12 @@ def box_sizing(keyword):
     return keyword in ('padding-box', 'border-box', 'content-box')
 
 
-@property()
-def shape_outside(tokens):
+@property(wants_base_url=True)
+def shape_outside(tokens, base_url):
     """``shape-outside`` property validation.
 
-    Validates the shape-outside property with box keyword values and shape functions.
+    Validates the shape-outside property with box keyword values, shape functions,
+    and image URLs.
     This property specifies the shape around which inline content wraps
     when flowing around a floated element.
 
@@ -538,6 +539,7 @@ def shape_outside(tokens):
     - ellipse(): Defines an elliptical shape.
     - polygon(): Defines a polygonal shape.
     - inset(): Defines a rectangular inset shape.
+    - url(): Uses an image's alpha channel to define the shape.
     - Shape function + box keyword combination (e.g., circle(50%) border-box)
 
     See https://www.w3.org/TR/css-shapes-1/#shape-outside-property
@@ -550,13 +552,21 @@ def shape_outside(tokens):
             keyword = token.lower_value
             if keyword == 'none' or keyword in box_keywords:
                 return keyword
-        # Handle shape functions
+        # Handle shape functions (circle, ellipse, polygon, inset)
         if token.type == 'function':
-            return _parse_shape_function(token)
+            result = _parse_shape_function(token)
+            if result is not None:
+                return result
+        # Handle URL for image-based shapes (url() is also a function token)
+        url = get_url(token, base_url)
+        if url is not None and url[0] == 'url':
+            # Return image tuple: ('image', url_info, ref_box)
+            return ('image', url[1], 'margin-box')
 
     elif len(tokens) == 2:
         # Handle shape function + reference box combination
         # Can be: function box-keyword OR box-keyword function
+        # Or: url box-keyword OR box-keyword url
         first, second = tokens
 
         shape = None
@@ -570,6 +580,17 @@ def shape_outside(tokens):
             if first.lower_value in box_keywords:
                 ref_box = first.lower_value
             shape = _parse_shape_function(second)
+
+        # Handle url() with box keyword
+        if shape is None:
+            url = get_url(first, base_url)
+            if url is not None and url[0] == 'url':
+                if second.type == 'ident' and second.lower_value in box_keywords:
+                    return ('image', url[1], second.lower_value)
+            url = get_url(second, base_url)
+            if url is not None and url[0] == 'url':
+                if first.type == 'ident' and first.lower_value in box_keywords:
+                    return ('image', url[1], first.lower_value)
 
         if shape and ref_box:
             # Return shape with reference box as a combined tuple
@@ -591,6 +612,24 @@ def shape_margin(token):
     length = get_length(token, negative=False, percentage=True)
     if length is not None:
         return length
+    return None
+
+
+@property()
+@single_token
+def shape_image_threshold(token):
+    """``shape-image-threshold`` property validation.
+
+    Defines the alpha channel threshold for extracting the shape from an image.
+    Pixels with alpha values greater than this threshold are considered
+    inside the shape. Must be a number between 0.0 and 1.0.
+
+    See https://www.w3.org/TR/css-shapes-1/#shape-image-threshold-property
+    """
+    number = get_number(token)
+    if number is not None:
+        # Clamp to valid range [0, 1]
+        return max(0.0, min(1.0, number.value))
     return None
 
 
