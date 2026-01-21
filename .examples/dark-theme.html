@@ -301,11 +301,19 @@
 
       <h3>Centered Image with Text Wrap</h3>
 
-      <div class="center-wrap-columns">
-        <div class="left-spacer"></div>
-        <div class="right-spacer"></div>
-        <img src="./images/circle-shape.png" alt="Centered circle" class="center-column-image">
-        This demonstrates text flowing around a centered circular image using the dual-float technique. Two invisible spacer divs with semicircle shapes create a combined circular exclusion zone in the center. The left spacer has a circle positioned at its right edge, pushing text away from the left half of the center. The right spacer mirrors this with a circle at its left edge. Together, they form a complete circular hole where the image sits. Text curves naturally around both sides of the central image, creating a magazine-style effect. This technique is perfect for hero images, character portraits, decorative pull quotes, or any layout where content should flow elegantly around a centered focal point.
+      <div class="tight-wrap-container">
+        <div class="col1">
+          <img class="img" src="./images/circle-shape.png" alt="Centered circle">
+          <div class="inner">
+            This demonstrates the "tight wrap" effect where text flows around both sides of a centered circular image. The technique uses two overlapping columns. Each column is wider than 50% and they overlap in the center. The visible image floats right in column one with shape-outside: circle(). An invisible spacer floats left in column two with the same shape. Together they create a circular exclusion zone in the center where the image appears.
+          </div>
+        </div>
+        <div class="col2">
+          <div class="img"></div>
+          <div class="inner">
+            The inner content areas use margins to avoid the overlap zone, keeping text on the correct side. Text curves naturally around both shapes, creating the magazine-style effect similar to Microsoft Word's "Tight" text wrapping mode. This technique is perfect for hero images, portraits, and decorative pull quotes in professional print layouts.
+          </div>
+        </div>
       </div>
     </section>
 

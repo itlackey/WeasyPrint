@@ -781,62 +781,78 @@ li::marker {
   min-height: 1.4in;
 }
 
-/* Centered image with text wrapping - dual float technique */
-.center-wrap-columns {
-  margin: var(--space-4) 0;
-  min-height: 1.5in;
+/* Centered image with text wrapping - tight wrap effect
+   Based on paulobrien's overlapping column technique */
+.tight-wrap-container {
+  display: flex;
+  overflow: hidden;
   position: relative;
+  margin: var(--space-4) 0;
+  break-inside: avoid;
+  padding: 0;
+}
+
+/* Both columns wider than 50% to create overlap zone
+   Overlap must be >= circle width (1.5in) for proper wrapping
+   3.0in + 3.0in - 1.5in = 4.5in total (fits in 5in content area) */
+.tight-wrap-container .col1,
+.tight-wrap-container .col2 {
   text-align: justify;
   line-height: 1.5;
-  break-inside: avoid;  /* Keep the entire section together */
-  break-before: auto;
+  flex: 0 0 3in;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
-.center-wrap-columns::after {
+/* Column 2 overlaps column 1 by circle width */
+.tight-wrap-container .col2 {
+  margin-left: -1.5in;
+}
+
+/* Inner content margins push text away from center overlap zone */
+.tight-wrap-container .col1 .inner {
+  margin-right: 0.8in;
+}
+
+.tight-wrap-container .col2 .inner {
+  margin-left: 0.8in;
+  margin-right: 0.1in;
+}
+
+/* Spacer to push images down - creates text above the circle */
+.tight-wrap-container .col1::before,
+.tight-wrap-container .col2::before {
   content: "";
-  display: table;
-  clear: both;
+  float: right;
+  width: 1px;
+  height: 0.5in;
 }
 
-/* Container for centered image with text above and below */
-.center-wrap-container {
-  margin: var(--space-4) 0;
-}
-
-.center-wrap-container > p {
-  margin: 0 0 var(--space-2) 0;
-}
-
-/* Left spacer - creates semicircular exclusion bulging toward center */
-.center-wrap-columns .left-spacer {
+.tight-wrap-container .col2::before {
   float: left;
-  width: 2in;
-  height: 1.5in;
-  /* Circle centered at right edge, extending 0.75in into the center gap */
-  shape-outside: circle(0.75in at 100% 50%);
-  shape-margin: 0.1in;
 }
 
-/* The centered image - absolutely positioned to fill the exclusion zone */
-.center-column-image {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  transform: translateX(-50%);
+/* Visible image in col1 - floated RIGHT with circle shape */
+.tight-wrap-container .col1 .img {
+  float: right;
+  clear: right;
   width: 1.5in;
   height: 1.5in;
   border-radius: 50%;
-  z-index: 1;
+  shape-outside: circle(50%);
+  shape-margin: 0.05in;
+  margin: 0 0 0 0.05in;
 }
 
-/* Right spacer - creates semicircular exclusion bulging toward center */
-.center-wrap-columns .right-spacer {
-  float: right;
-  width: 2in;
+/* Invisible spacer in col2 - floated LEFT with circle shape */
+.tight-wrap-container .col2 .img {
+  float: left;
+  clear: left;
+  width: 1.5in;
   height: 1.5in;
-  /* Circle centered at left edge, extending 0.75in into the center gap */
-  shape-outside: circle(0.75in at 0% 50%);
-  shape-margin: 0.1in;
+  shape-outside: circle(50%);
+  shape-margin: 0.05in;
+  margin: 0 0.05in 0 0;
 }
 
 /* Centered image with text on both sides - flexbox layout */
