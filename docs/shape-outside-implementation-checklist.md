@@ -824,25 +824,25 @@ Each phase follows a strict development and review cycle:
   - [ ] Implement scanline intersection with curves
   - [ ] Handle Bezier curve intersection math
 
-#### 4.2.3 Implement Image-Based Shapes
+#### 4.2.3 Implement Image-Based Shapes ✅ COMPLETE
 
-- [ ] Add CSS parsing for `url()` in shape-outside
-  - [ ] Detect url() function token
-  - [ ] Store image URL reference
-  - [ ] Return tuple: `('image', url, box_keyword)`
-  - [ ] Handle combined: `url(image.png) border-box`
-- [ ] Add `shape-image-threshold` property
-  - [ ] Edit `/weasyprint/css/properties.py` - add initial value (0.0)
-  - [ ] Edit validation - accept number 0.0-1.0
-- [ ] Add `ImageBoundary` class
-  - [ ] Constructor: `__init__(self, image, threshold, reference_box)`
-  - [ ] Load image and extract alpha channel
-  - [ ] Implement `get_bounds_at_y()`
-    - [ ] Map y coordinate to image row
-    - [ ] Scan alpha values to find left/right bounds
-    - [ ] Use threshold to determine "inside" shape
-  - [ ] Cache scanline results for performance
-  - [ ] Handle image scaling to reference box
+- [x] Add CSS parsing for `url()` in shape-outside
+  - [x] Detect url() function token
+  - [x] Store image URL reference
+  - [x] Return tuple: `('image', url, box_keyword)`
+  - [x] Handle combined: `url(image.png) border-box`
+- [x] Add `shape-image-threshold` property
+  - [x] Edit `/weasyprint/css/properties.py` - add initial value (0.0)
+  - [x] Edit validation - accept number 0.0-1.0
+- [x] Add `ImageBoundary` class
+  - [x] Constructor: `__init__(self, image_data, threshold, ref_x, ref_y, ref_w, ref_h)`
+  - [x] Load image and extract alpha channel via PIL
+  - [x] Implement `get_bounds_at_y()`
+    - [x] Map y coordinate to image row
+    - [x] Scan alpha values to find left/right bounds
+    - [x] Use threshold to determine "inside" shape
+  - [x] Cache scanline results for performance
+  - [x] Handle image scaling to reference box
 
 #### 4.2.4 Implement shape-margin Property
 
@@ -1208,8 +1208,19 @@ Use this section to track important decisions, open questions, and notes during 
 - New Edge Case Tests: 11 tests added
 - Total Tests: 128 shape-outside tests passing
 
+### Image-Based Shapes Enhancement
+- Implementation Date: January 21, 2026 ✅
+- Features Added:
+  - `shape-outside: url(image.png)` - text wraps around image's alpha channel
+  - `shape-image-threshold` property (0.0-1.0) for alpha threshold control
+  - ImageBoundary class with alpha channel extraction via PIL
+  - URL resolution with `wants_base_url=True` decorator support
+- Demo Updated: daggercat.png now uses image-based shape-outside
+- Total Tests: 132 shape-outside tests passing
+
 ### Final Release
 - Validation Date: January 21, 2026 ✅
 - Bug Fixes Commit: caf4a91
-- Total Tests: 128 shape-outside tests, 1001 layout tests passing
+- Image Shape Commit: (current)
+- Total Tests: 132 shape-outside tests, 1001+ layout tests passing
 - Branch: claude/analyze-shape-outside-support-Hf6eY

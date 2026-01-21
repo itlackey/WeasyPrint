@@ -1,0 +1,142 @@
+/* ==========================================================================
+   KITCHEN SINK THEME
+   Theme-specific decorative styles, title pages, and visual treatments
+   ========================================================================== */
+
+/* Title page */
+.title-page {
+  page: title;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  /* TAC-COMPLIANT: Pure white background for Chromium-based engines
+     Any colored background produces 280%+ TAC in Chromium's PDF generation.
+     Must use pure white to pass DriveThruRPG's 240% TAC limit. */
+  background: white;
+  color: #333333;
+}
+
+.title-content {
+  padding: 1in;
+}
+
+.book-title {
+  font-family: var(--font-serif);
+  font-size: 36pt;
+  font-weight: bold;
+  line-height: 1.2;
+  margin-bottom: 0.5in;
+  letter-spacing: 0.05em;
+}
+
+.subtitle {
+  font-size: 14pt;
+  font-style: italic;
+  opacity: 0.9;
+  margin-bottom: 0.25in;
+}
+
+.version {
+  font-size: 11pt;
+  opacity: 0.7;
+}
+
+.ornament {
+  width: 2in;
+  height: 2pt;
+  background: linear-gradient(90deg, transparent, white, transparent);
+  margin: 0.5in auto 0;
+}
+
+/* Summary page */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.25in;
+  margin-bottom: 0.25in;
+}
+
+.summary-category {
+  background: var(--color-light);
+  padding: 0.125in;
+  border-radius: 3pt;
+}
+
+.summary-category h4 {
+  color: var(--color-primary);
+  font-size: 10pt;
+  margin-bottom: 0.0625in;
+  border-bottom: 1pt solid var(--color-primary);
+  padding-bottom: 0.0625in;
+}
+
+.summary-category ul {
+  font-size: 8pt;
+  margin: 0;
+  padding-left: 0.1875in;
+}
+
+.summary-category li {
+  margin-bottom: 0.03in;
+}
+
+.verification-note {
+  /* TAC-COMPLIANT: Using very light colors for Chromium compatibility
+     Dark colors produce 300-400% TAC in Chromium's PDF generation.
+     Light blue-gray background with dark text is TAC-safe. */
+  background: #d8e4f0;  /* Very light blue-gray: ~35% TAC */
+  color: #333333;  /* Dark gray text for readability */
+  padding: 0.25in;
+  border-radius: 3pt;
+  border: 2pt solid #a8c0d8;  /* Light blue border for visual definition */
+}
+
+.verification-note h3 {
+  color: #2a4a6a;  /* Medium blue for headers - TAC safe */
+  margin-bottom: 0.125in;
+}
+
+.verification-note ol {
+  font-size: 9pt;
+  column-count: 2;
+}
+
+/* Appendix page */
+.appendix-page {
+  page: appendix;
+}
+
+.doc-info {
+  display: grid;
+  grid-template-columns: 1in auto;
+  gap: 0.0625in 0.25in;
+  margin-bottom: 0.25in;
+  font-size: 9pt;
+}
+
+.doc-info dt {
+  font-weight: bold;
+  color: var(--color-primary);
+}
+
+.doc-info dd {
+  margin: 0;
+}
+
+.limitations {
+  font-size: 9pt;
+  color: var(--color-muted);
+}
+
+.limitations li {
+  margin-bottom: 0.0625in;
+}
+
+.end-mark {
+  text-align: center;
+  margin-top: 0.5in;
+  font-style: italic;
+  color: var(--color-muted);
+}

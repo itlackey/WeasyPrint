@@ -107,7 +107,6 @@ def test_shape_outside_invalid_keywords():
 
 
 @pytest.mark.parametrize('invalid_value', [
-    'url(image.png)',  # image reference (not yet supported)
     '50px',  # length value (invalid)
     '50%',  # percentage value (invalid)
     'auto',  # not a valid shape-outside value
@@ -134,6 +133,29 @@ def test_shape_outside_unsupported_values(invalid_value):
     div, = body.children
     # Should fall back to default 'none'
     assert div.style['shape_outside'] == 'none'
+
+
+def test_shape_outside_url_parsing():
+    """Test that url() values for shape-outside are parsed correctly."""
+    page, = render_pages('''
+        <style>
+            div {
+                float: left;
+                width: 100px;
+                height: 100px;
+                shape-outside: url(image.png);
+            }
+        </style>
+        <div></div>
+    ''')
+    html, = page.children
+    body, = html.children
+    div, = body.children
+    # Should be parsed as an image shape tuple
+    shape = div.style['shape_outside']
+    assert isinstance(shape, tuple)
+    assert shape[0] == 'image'
+    assert shape[2] == 'margin-box'  # default reference box
 
 
 # ---------------------------------------------------------------------------
